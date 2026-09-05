@@ -1,0 +1,63 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: 'Inter', 'Arial', sans-serif;
+  --font-display: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+:root {
+  color-scheme: light;
+  --background: oklch(0.98 0.005 155);
+  --foreground: oklch(0.23 0.025 255);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.23 0.025 255);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.23 0.025 255);
+  --primary: oklch(0.67 0.17 162);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.96 0.01 155);
+  --secondary-foreground: oklch(0.3 0.03 255);
+  --muted: oklch(0.96 0.01 155);
+  --muted-foreground: oklch(0.57 0.025 255);
+  --accent: oklch(0.95 0.04 162);
+  --accent-foreground: oklch(0.38 0.1 162);
+  --destructive: oklch(0.61 0.2 25);
+  --border: oklch(0.91 0.015 250);
+  --input: oklch(0.91 0.015 250);
+  --ring: oklch(0.67 0.17 162);
+  --radius: 0.65rem;
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  body { @apply bg-background text-foreground font-sans antialiased; }
+  button, input, select { font: inherit; }
+}
+
+.font-display { font-family: var(--font-display); }
