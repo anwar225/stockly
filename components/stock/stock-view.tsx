@@ -10,17 +10,25 @@ interface StockViewProps {
   setSearch: (value: string) => void
   statusFilter: string
   setStatusFilter: (value: string) => void
+  loading?: boolean
+  error?: string | null
 }
 
-export function StockView({ products, search, setSearch, statusFilter, setStatusFilter }: StockViewProps) {
+export function StockView({ products, search, setSearch, statusFilter, setStatusFilter, loading, error }: StockViewProps) {
+  // Calculate KPIs from real data
+  const totalProducts = products.length
+  const totalUnits = products.reduce((sum, p) => sum + p.stock, 0)
+  const lowStock = products.filter((p) => p.stock > 0 && p.stock <= p.minStock).length
+  const outOfStock = products.filter((p) => p.stock === 0).length
+
   return (
     <>
       <PageHeading title="Gestion du stock" subtitle="Suivez les niveaux de stock de votre magasin." />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi label="Total produits" value="245" caption="Références actives" icon={Package} tone="green" />
-        <Kpi label="Total unités" value="1 240" caption="Dans tous les magasins" icon={Boxes} tone="blue" />
-        <Kpi label="Stock faible" value="12" caption="À réapprovisionner" icon={SlidersHorizontal} tone="amber" />
-        <Kpi label="Rupture" value="4" caption="Action immédiate" icon={Archive} tone="purple" />
+        <Kpi label="Total produits" value={totalProducts.toString()} caption="Références actives" icon={Package} tone="green" />
+        <Kpi label="Total unités" value={totalUnits.toString()} caption="Dans tous les magasins" icon={Boxes} tone="blue" />
+        <Kpi label="Stock faible" value={lowStock.toString()} caption="À réapprovisionner" icon={SlidersHorizontal} tone="amber" />
+        <Kpi label="Rupture" value={outOfStock.toString()} caption="Action immédiate" icon={Archive} tone="purple" />
       </div>
       <div className="mt-6 rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row">
@@ -44,7 +52,18 @@ export function StockView({ products, search, setSearch, statusFilter, setStatus
             <option>Rupture</option>
           </select>
         </div>
-        <ProductTable products={products} compact />
+        {loading ? (
+          <div className="p-12 text-center">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-emerald-500 border-r-transparent"></div>
+            <p className="mt-4 text-sm text-slate-500">Chargement des données de stock...</p>
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center">
+            <p className="text-sm font-semibold text-rose-600">{error}</p>
+          </div>
+        ) : (
+          <ProductTable products={products} compact />
+        )}
       </div>
     </>
   )

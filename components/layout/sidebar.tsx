@@ -1,7 +1,7 @@
-import { Archive, BarChart3, Boxes, ChevronLeft, ChevronRight, FileText, Gauge, LayoutGrid, Package, Settings, ShoppingCart, Tags, Truck, Users, X } from 'lucide-react'
+import { Archive, BarChart3, Boxes, ChevronLeft, ChevronRight, CreditCard, FileText, Gauge, LayoutGrid, Package, Settings, ShoppingCart, Tags, Truck, Users, X } from 'lucide-react'
 import { Logo } from '@/components/shared/logo'
 
-type View = 'dashboard' | 'products' | 'categories' | 'brands' | 'stock' | 'movements' | 'settings' | 'soon'
+type View = 'dashboard' | 'products' | 'categories' | 'brands' | 'stock' | 'movements' | 'suppliers' | 'purchases' | 'customers' | 'sales' | 'invoices' | 'payments' | 'analytics' | 'settings' | 'soon'
 
 interface SidebarProps {
   collapsed: boolean
@@ -28,16 +28,17 @@ const navGroups = [
       { id: 'movements', label: 'Mouvements de stock', icon: Archive },
     ],
   },
-  { label: 'Achats', items: [{ id: 'soon', label: 'Fournisseurs', icon: Truck }, { id: 'soon', label: 'Achats', icon: ShoppingCart }] },
+  { label: 'Achats', items: [{ id: 'suppliers', label: 'Fournisseurs', icon: Truck }, { id: 'purchases', label: 'Achats', icon: ShoppingCart }] },
   {
     label: 'Ventes',
     items: [
-      { id: 'soon', label: 'Clients', icon: Users },
-      { id: 'soon', label: 'Ventes', icon: ShoppingCart },
-      { id: 'soon', label: 'Factures', icon: FileText },
+      { id: 'customers', label: 'Clients', icon: Users },
+      { id: 'sales', label: 'Ventes', icon: ShoppingCart },
+      { id: 'invoices', label: 'Factures', icon: FileText },
+      { id: 'payments', label: 'Paiements', icon: CreditCard },
     ],
   },
-  { label: 'Rapports', items: [{ id: 'soon', label: 'Analyses', icon: BarChart3 }] },
+  { label: 'Rapports', items: [{ id: 'analytics', label: 'Analytics', icon: BarChart3 }] },
   {
     label: 'Administration',
     items: [{ id: 'soon', label: 'Équipe', icon: Users }, { id: 'settings', label: 'Paramètres', icon: Settings }],

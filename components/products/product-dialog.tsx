@@ -2,8 +2,8 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Plus } from 'lucide-react'
-import { categories } from '@/lib/stockly-data'
 import type { ProductForm } from '@/types/product.types'
+import type { Category, Brand } from '@/types/catalog.types'
 
 const productSchema = z.object({
   name: z.string().min(2, 'Le nom est requis'),
@@ -21,9 +21,12 @@ interface ProductDialogProps {
   form: ReturnType<typeof useForm<ProductForm>>
   onClose: () => void
   onSubmit: (data: ProductForm) => void
+  isLoading?: boolean
+  categories?: Category[]
+  brands?: Brand[]
 }
 
-export function ProductDialog({ form, onClose, onSubmit }: ProductDialogProps) {
+export function ProductDialog({ form, onClose, onSubmit, isLoading, categories = [], brands = [] }: ProductDialogProps) {
   const { register, handleSubmit, formState: { errors } } = form
 
   const input = (name: keyof ProductForm, label: string, type = 'text') => (
@@ -71,12 +74,24 @@ export function ProductDialog({ form, onClose, onSubmit }: ProductDialogProps) {
                 >
                   <option value="">Sélectionner</option>
                   {categories.map((c) => (
-                    <option key={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.name}>{c.name}</option>
                   ))}
                 </select>
                 {errors.category && <span className="text-xs text-rose-500">{errors.category.message as string}</span>}
               </label>
-              {input('brand', 'Marque')}
+              <label className="space-y-1.5">
+                <span className="text-xs font-semibold text-slate-700">Marque</span>
+                <select
+                  {...register('brand')}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                >
+                  <option value="">Sélectionner</option>
+                  {brands.map((b) => (
+                    <option key={b.id} value={b.name}>{b.name}</option>
+                  ))}
+                </select>
+                {errors.brand && <span className="text-xs text-rose-500">{errors.brand.message as string}</span>}
+              </label>
             </div>
           </div>
           <div>
@@ -114,10 +129,20 @@ export function ProductDialog({ form, onClose, onSubmit }: ProductDialogProps) {
             </button>
             <button
               type="submit"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-white shadow-sm shadow-emerald-200 hover:bg-emerald-600"
+              disabled={isLoading}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-white shadow-sm shadow-emerald-200 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Plus size={17} />
-              Ajouter le produit
+              {isLoading ? (
+                <>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-solid border-white border-r-transparent"></div>
+                  Ajout...
+                </>
+              ) : (
+                <>
+                  <Plus size={17} />
+                  Ajouter le produit
+                </>
+              )}
             </button>
           </div>
         </form>

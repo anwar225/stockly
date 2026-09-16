@@ -5,9 +5,11 @@ import type { Category } from '@/types'
 
 interface CategoriesViewProps {
   categories: Category[]
+  loading?: boolean
+  error?: string | null
 }
 
-export function CategoriesView({ categories }: CategoriesViewProps) {
+export function CategoriesView({ categories, loading, error }: CategoriesViewProps) {
   const rows = categories.map((c) => [
     c.name,
     `${c.count} produit${c.count > 1 ? 's' : ''}`,
@@ -37,35 +39,46 @@ export function CategoriesView({ categories }: CategoriesViewProps) {
             />
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[620px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Nom</th>
-                <th className="px-5 py-3 font-medium">Produits</th>
-                <th className="px-5 py-3 font-medium">Statut</th>
-                <th className="px-5 py-3 font-medium">Créée le</th>
-                <th className="px-5 py-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => (
-                <tr key={i} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/70">
-                  {row.map((cell, j) => (
-                    <td key={j} className={`px-5 py-4 ${j === 0 ? 'font-semibold text-slate-800' : 'text-slate-500'}`}>
-                      {cell === 'Actif' ? <StatusBadge status="En stock" /> : cell}
-                    </td>
-                  ))}
-                  <td className="px-5 py-4 text-right">
-                    <button className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100">
-                      <MoreHorizontal size={18} />
-                    </button>
-                  </td>
+        {loading ? (
+          <div className="p-12 text-center">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-emerald-500 border-r-transparent"></div>
+            <p className="mt-4 text-sm text-slate-500">Chargement des catégories...</p>
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center">
+            <p className="text-sm font-semibold text-rose-600">{error}</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-xs text-slate-400">
+                  <th className="px-5 py-3 font-medium">Nom</th>
+                  <th className="px-5 py-3 font-medium">Produits</th>
+                  <th className="px-5 py-3 font-medium">Statut</th>
+                  <th className="px-5 py-3 font-medium">Créée le</th>
+                  <th className="px-5 py-3" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => (
+                  <tr key={i} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/70">
+                    {row.map((cell, j) => (
+                      <td key={j} className={`px-5 py-4 ${j === 0 ? 'font-semibold text-slate-800' : 'text-slate-500'}`}>
+                        {cell === 'Actif' ? <StatusBadge status="En stock" /> : cell}
+                      </td>
+                    ))}
+                    <td className="px-5 py-4 text-right">
+                      <button className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100">
+                        <MoreHorizontal size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </>
   )

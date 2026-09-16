@@ -12,9 +12,11 @@ interface ProductsViewProps {
   setStatusFilter: (value: string) => void
   onAdd: () => void
   onDelete: (product: Product) => void
+  loading?: boolean
+  error?: string | null
 }
 
-export function ProductsView({ products, search, setSearch, statusFilter, setStatusFilter, onAdd, onDelete }: ProductsViewProps) {
+export function ProductsView({ products, search, setSearch, statusFilter, setStatusFilter, onAdd, onDelete, loading, error }: ProductsViewProps) {
   return (
     <>
       <PageHeading
@@ -60,7 +62,18 @@ export function ProductsView({ products, search, setSearch, statusFilter, setSta
             </select>
           </div>
         </div>
-        <ProductTable products={products} onDelete={onDelete} />
+        {loading ? (
+          <div className="p-12 text-center">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-emerald-500 border-r-transparent"></div>
+            <p className="mt-4 text-sm text-slate-500">Chargement des produits...</p>
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center">
+            <p className="text-sm font-semibold text-rose-600">{error}</p>
+          </div>
+        ) : (
+          <ProductTable products={products} onDelete={onDelete} />
+        )}
       </div>
     </>
   )

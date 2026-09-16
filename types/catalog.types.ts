@@ -10,3 +10,20 @@ export type Brand = {
   name: string
   count: number
 }
+
+// Type pour la réponse de l'API Prisma
+export type ApiCategory = {
+  id: string
+  name: string
+  storeId: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type ApiBrand = {
+  id: string
+  name: string
+  storeId: string
+  createdAt: string
+  updatedAt: string
+}

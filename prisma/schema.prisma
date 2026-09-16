@@ -1,0 +1,326 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  EMPLOYEE
+}
+
+enum MovementType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+enum PurchaseStatus {
+  DRAFT
+  ORDERED
+  RECEIVED
+  CANCELLED
+}
+
+enum SaleStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  CHECK
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users  User[]
+  stores Store[]
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String?
+  role           UserRole @default(EMPLOYEE)
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model Store {
+  id             String   @id @default(cuid())
+  name           String
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  products     Product[]
+  categories   Category[]
+  brands       Brand[]
+  movements    StockMovement[]
+  suppliers    Supplier[]
+  purchases    Purchase[]
+  customers    Customer[]
+  sales        Sale[]
+  invoices     Invoice[]
+  payments     Payment[]
+
+  @@index([organizationId])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String
+  storeId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([storeId, name])
+  @@index([storeId])
+}
+
+model Brand {
+  id        String   @id @default(cuid())
+  name      String
+  storeId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([storeId, name])
+  @@index([storeId])
+}
+
+model Supplier {
+  id          String   @id @default(cuid())
+  name        String
+  contactName String?
+  phone       String?
+  email       String?
+  address     String?
+  notes       String?
+  storeId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  store     Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  purchases Purchase[]
+
+  @@unique([storeId, name])
+  @@index([storeId])
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  storeId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sales Sale[]
+
+  @@index([storeId])
+}
+
+model Sale {
+  id          String     @id @default(cuid())
+  reference   String
+  customerId  String
+  storeId     String
+  saleDate    DateTime
+  status      SaleStatus @default(DRAFT)
+  totalAmount Decimal    @db.Decimal(12, 2)
+  notes       String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  customer Customer   @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  store    Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  items    SaleItem[]
+  invoice  Invoice?
+
+  @@unique([storeId, reference])
+  @@index([storeId])
+  @@index([customerId])
+  @@index([status])
+  @@index([saleDate])
+}
+
+model SaleItem {
+  id        String   @id @default(cuid())
+  saleId    String
+  productId String
+  quantity  Int
+  unitPrice Decimal  @db.Decimal(10, 2)
+  total     Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([saleId, productId])
+  @@index([saleId])
+  @@index([productId])
+}
+
+model Product {
+  id            String   @id @default(cuid())
+  name          String
+  sku           String
+  description   String?
+  purchasePrice Decimal  @db.Decimal(10, 2)
+  sellingPrice  Decimal  @db.Decimal(10, 2)
+  stock         Int      @default(0)
+  minStock      Int      @default(0)
+  categoryId    String?
+  brandId       String?
+  storeId       String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  store         Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  category      Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brand         Brand?          @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  movements     StockMovement[]
+  purchaseItems PurchaseItem[]
+  saleItems     SaleItem[]
+
+  @@unique([storeId, sku])
+  @@index([storeId])
+  @@index([categoryId])
+  @@index([brandId])
+}
+
+model StockMovement {
+  id        String       @id @default(cuid())
+  type      MovementType
+  quantity  Int
+  reason    String?
+  productId String
+  storeId   String
+  createdAt DateTime     @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([storeId])
+  @@index([createdAt])
+}
+
+model Purchase {
+  id           String         @id @default(cuid())
+  reference    String
+  supplierId   String
+  storeId      String
+  purchaseDate DateTime
+  status       PurchaseStatus @default(DRAFT)
+  totalAmount  Decimal        @db.Decimal(12, 2)
+  notes        String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  supplier Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  store    Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  items    PurchaseItem[]
+
+  @@unique([storeId, reference])
+  @@index([storeId])
+  @@index([supplierId])
+  @@index([status])
+  @@index([purchaseDate])
+}
+
+model PurchaseItem {
+  id         String   @id @default(cuid())
+  purchaseId String
+  productId  String
+  quantity   Int
+  unitPrice  Decimal  @db.Decimal(10, 2)
+  total      Decimal  @db.Decimal(12, 2)
+  createdAt  DateTime @default(now())
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([purchaseId, productId])
+  @@index([purchaseId])
+  @@index([productId])
+}
+
+model Invoice {
+  id          String        @id @default(cuid())
+  reference   String
+  saleId      String        @unique
+  storeId     String
+  totalAmount Decimal       @db.Decimal(12, 2)
+  status      InvoiceStatus @default(UNPAID)
+  invoiceDate DateTime
+  dueDate     DateTime?
+  notes       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  sale     Sale      @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  payments Payment[]
+
+  @@unique([storeId, reference])
+  @@index([storeId])
+  @@index([saleId])
+  @@index([status])
+  @@index([invoiceDate])
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  invoiceId         String
+  storeId           String
+  amount            Decimal       @db.Decimal(12, 2)
+  method            PaymentMethod
+  paymentDate       DateTime
+  reference         String?
+  externalReference String?
+  notes             String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId])
+  @@index([storeId])
+  @@index([paymentDate])
+  @@index([method])
+}

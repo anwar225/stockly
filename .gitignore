@@ -14,3 +14,12 @@ node_modules
 .next/
 .DS_Store
 tsconfig.tsbuildinfo
+
+/lib/generated/prisma
+.env
+
+# IDE assistant configurations
+.agents/
+.claude/
+.windsurf/
+skills-lock.json
