@@ -507,24 +507,24 @@ export default function StocklyApp() {
 
   const handleReceivePurchase = async () => {
     if (!selectedPurchase) return
-    
+
     try {
       setIsSubmitting(true)
-      
+
       const response = await fetch(`/api/purchases/${selectedPurchase.id}/receive`, {
         method: 'POST',
       })
-      
+
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to receive purchase')
       }
-      
+
       const updatedPurchase: Purchase = await response.json()
       setPurchaseList((prev) => prev.map((p) => (p.id === selectedPurchase.id ? updatedPurchase : p)))
       setSelectedPurchase(updatedPurchase)
       setReceiveConfirm(false)
-      
+
       // Refresh products to update stock
       const productsResponse = await fetch('/api/products')
       if (productsResponse.ok) {
@@ -544,12 +544,43 @@ export default function StocklyApp() {
         }))
         setProductList(convertedProducts)
       }
-      
+
       setNotice('Achat réceptionné - Stock mis à jour')
       setTimeout(() => setNotice(''), 3000)
     } catch (err) {
       console.error('Error receiving purchase:', err)
       setNotice('Erreur lors de la réception')
+      setTimeout(() => setNotice(''), 3000)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleCancelPurchase = async (purchaseId: string) => {
+    if (!confirm('Annuler cet achat ?')) return
+
+    try {
+      setIsSubmitting(true)
+
+      const response = await fetch(`/api/purchases/${purchaseId}/cancel`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to cancel purchase')
+      }
+
+      const updatedPurchase: Purchase = await response.json()
+      setPurchaseList((prev) => prev.map((p) => (p.id === purchaseId ? updatedPurchase : p)))
+      if (selectedPurchase?.id === purchaseId) {
+        setSelectedPurchase(updatedPurchase)
+      }
+      setNotice('Achat annulé.')
+      setTimeout(() => setNotice(''), 3000)
+    } catch (err) {
+      console.error('Error cancelling purchase:', err)
+      setNotice('Erreur lors de l\'annulation.')
       setTimeout(() => setNotice(''), 3000)
     } finally {
       setIsSubmitting(false)
@@ -750,6 +781,7 @@ export default function StocklyApp() {
           purchase={selectedPurchase}
           onOrder={handleOrderPurchase}
           onReceiveRequest={() => setReceiveConfirm(true)}
+          onCancel={handleCancelPurchase}
           isProcessing={isSubmitting}
         />
       )}

@@ -1,4 +1,4 @@
-import { X, Package, Calendar, Building2, ShoppingBag, CheckCircle, ArrowRightCircle } from 'lucide-react'
+import { X, Package, Calendar, Building2, ShoppingBag, CheckCircle, ArrowRightCircle, XCircle } from 'lucide-react'
 import { PurchaseStatusBadge } from './purchase-status-badge'
 import type { Purchase } from '@/types/purchase.types'
 
@@ -8,14 +8,16 @@ interface PurchaseDetailDialogProps {
   purchase: Purchase | null
   onOrder: () => void
   onReceiveRequest: () => void
+  onCancel: (purchaseId: string) => void
   isProcessing?: boolean
 }
 
-export function PurchaseDetailDialog({ isOpen, onClose, purchase, onOrder, onReceiveRequest, isProcessing }: PurchaseDetailDialogProps) {
+export function PurchaseDetailDialog({ isOpen, onClose, purchase, onOrder, onReceiveRequest, onCancel, isProcessing }: PurchaseDetailDialogProps) {
   if (!isOpen || !purchase) return null
 
   const canOrder = purchase.status === 'DRAFT'
   const canReceive = purchase.status === 'ORDERED'
+  const canCancel = purchase.status === 'DRAFT' || purchase.status === 'ORDERED'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -132,6 +134,16 @@ export function PurchaseDetailDialog({ isOpen, onClose, purchase, onOrder, onRec
               >
                 <CheckCircle size={18} />
                 Réceptionner
+              </button>
+            )}
+            {canCancel && (
+              <button
+                onClick={() => onCancel(purchase.id)}
+                disabled={isProcessing}
+                className="flex-1 flex items-center justify-center gap-2 h-10 rounded-lg bg-rose-500 px-4 text-sm font-semibold text-white shadow-sm shadow-rose-200 hover:bg-rose-600 disabled:opacity-50"
+              >
+                <XCircle size={18} />
+                Annuler
               </button>
             )}
             <button
