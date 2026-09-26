@@ -7,7 +7,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    
+
     // Get the first available store
     const store = await prisma.store.findFirst()
     if (!store) {
@@ -16,7 +16,7 @@ export async function GET(
         { status: 500 }
       )
     }
-    
+
     // Find purchase by id AND storeId (security check)
     const purchase = await prisma.purchase.findFirst({
       where: {
@@ -37,14 +37,14 @@ export async function GET(
         },
       },
     })
-    
+
     if (!purchase) {
       return NextResponse.json(
         { error: 'Achat introuvable' },
         { status: 404 }
       )
     }
-    
+
     // Serialize Decimal to Number
     const serializedPurchase = {
       id: purchase.id,
@@ -76,12 +76,74 @@ export async function GET(
         },
       })),
     }
-    
+
     return NextResponse.json(serializedPurchase)
   } catch (error) {
     console.error('Error fetching purchase:', error)
     return NextResponse.json(
       { error: 'Failed to fetch purchase' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+
+    // Get the first available store
+    const store = await prisma.store.findFirst()
+    if (!store) {
+      return NextResponse.json(
+        { error: 'Aucun magasin disponible' },
+        { status: 500 }
+      )
+    }
+
+    // Find purchase by id AND storeId
+    const purchase = await prisma.purchase.findFirst({
+      where: {
+        id,
+        storeId: store.id,
+      },
+    })
+
+    if (!purchase) {
+      return NextResponse.json(
+        { error: 'Achat introuvable' },
+        { status: 404 }
+      )
+    }
+
+    // Only allow deletion of DRAFT purchases
+    if (purchase.status !== 'DRAFT') {
+      return NextResponse.json(
+        { error: 'Seuls les achats en brouillon peuvent être supprimés' },
+        { status: 400 }
+      )
+    }
+
+    // Delete purchase and items in a transaction
+    await prisma.$transaction(async (tx) => {
+      // Delete items first (cascade would work but explicit is clearer)
+      await tx.purchaseItem.deleteMany({
+        where: { purchaseId: id },
+      })
+
+      // Delete purchase
+      await tx.purchase.delete({
+        where: { id },
+      })
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting purchase:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete purchase' },
       { status: 500 }
     )
   }
