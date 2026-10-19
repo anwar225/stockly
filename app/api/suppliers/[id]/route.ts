@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getCurrentStore } from '@/lib/get-current-store'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function GET(
   request: Request,
@@ -7,15 +10,8 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+
+    const store = await getCurrentStore()
     
     // Find supplier by id AND storeId (security check)
     const supplier = await prisma.supplier.findFirst({
@@ -34,6 +30,20 @@ export async function GET(
     
     return NextResponse.json(supplier)
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'UNAUTHENTICATED') {
+        return NextResponse.json(
+          { error: 'Non authentifié' },
+          { status: 401 }
+        )
+      }
+      if (error.message === 'NO_STORE_FOUND') {
+        return NextResponse.json(
+          { error: 'Aucun magasin disponible pour cette organisation' },
+          { status: 500 }
+        )
+      }
+    }
     console.error('Error fetching supplier:', error)
     return NextResponse.json(
       { error: 'Failed to fetch supplier' },
@@ -70,16 +80,10 @@ export async function PUT(
         )
       }
     }
-    
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
-    
+
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
+
     // Check if supplier exists and belongs to this store
     const existingSupplier = await prisma.supplier.findFirst({
       where: {
@@ -126,8 +130,14 @@ export async function PUT(
     
     return NextResponse.json(supplier)
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error updating supplier:', error)
-    
+
     // Handle unique constraint violation
     if (error instanceof Error && error.message.includes('Unique constraint')) {
       return NextResponse.json(
@@ -135,7 +145,7 @@ export async function PUT(
         { status: 409 }
       )
     }
-    
+
     return NextResponse.json(
       { error: 'Failed to update supplier' },
       { status: 500 }
@@ -149,16 +159,10 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
-    
+
+    // Vérifier les permissions : OWNER, ADMIN
+    const { store } = await requireRole(['OWNER', 'ADMIN'])
+
     // Check if supplier exists and belongs to this store
     const supplier = await prisma.supplier.findFirst({
       where: {
@@ -194,8 +198,14 @@ export async function DELETE(
     
     return NextResponse.json({ success: true })
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error deleting supplier:', error)
-    
+
     // Handle foreign key constraint violation
     if (error instanceof Error && error.message.includes('Foreign key constraint')) {
       return NextResponse.json(
@@ -203,7 +213,7 @@ export async function DELETE(
         { status: 409 }
       )
     }
-    
+
     return NextResponse.json(
       { error: 'Failed to delete supplier' },
       { status: 500 }

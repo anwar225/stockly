@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getPeriodInfo } from '@/lib/analytics-helper'
 import { csvResponse, escapeCsv } from '@/lib/csv'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function GET(request: Request) {
   try {
@@ -13,14 +15,8 @@ export async function GET(request: Request) {
     // Get period info
     const periodInfo = getPeriodInfo(period || undefined, startDate || undefined, endDate || undefined)
 
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
 
     // Fetch all products for the store
     const products = await prisma.product.findMany({
@@ -30,73 +26,33 @@ export async function GET(request: Request) {
       include: {
         category: true,
         brand: true,
-        saleItems: {
-          where: {
-            sale: {
-              status: 'CONFIRMED',
-              saleDate: {
-                gte: periodInfo.startDate,
-                lte: periodInfo.endDate,
-              },
-            },
-          },
-        },
-        purchaseItems: {
-          where: {
-            purchase: {
-              status: 'RECEIVED',
-              purchaseDate: {
-                gte: periodInfo.startDate,
-                lte: periodInfo.endDate,
-              },
-            },
-          },
-        },
+      },
+      orderBy: {
+        name: 'asc',
       },
     })
 
-    // Calculate metrics for each product
-    const rows = products.map((product) => {
-      const quantitySold = product.saleItems.reduce((sum, item) => sum + item.quantity, 0)
-      const revenue = product.saleItems.reduce((sum, item) => sum + Number(item.total), 0)
-      const quantityPurchased = product.purchaseItems.reduce((sum, item) => sum + item.quantity, 0)
-      const purchaseAmount = product.purchaseItems.reduce((sum, item) => sum + Number(item.total), 0)
-
-      // Stock status
-      let stockStatus = 'En stock'
-      if (product.stock === 0) {
-        stockStatus = 'Rupture de stock'
-      } else if (product.stock <= product.minStock) {
-        stockStatus = 'Stock faible'
-      }
-
-      return [
-        escapeCsv(product.name),
-        escapeCsv(product.sku || ''),
-        escapeCsv(product.category?.name || ''),
-        escapeCsv(product.brand?.name || ''),
-        product.stock,
-        product.minStock,
-        stockStatus,
-        quantitySold,
-        revenue,
-        quantityPurchased,
-        purchaseAmount,
-      ]
-    })
+    // Build CSV rows
+    const rows = products.map((product) => [
+      escapeCsv(product.name),
+      escapeCsv(product.sku),
+      escapeCsv(product.category?.name || ''),
+      escapeCsv(product.brand?.name || ''),
+      Number(product.purchasePrice),
+      Number(product.sellingPrice),
+      product.stock,
+      product.minStock,
+    ])
 
     const headers = [
-      'Produit',
+      'Nom',
       'SKU',
       'Catégorie',
       'Marque',
+      'Prix d\'achat',
+      'Prix de vente',
       'Stock',
       'Stock minimum',
-      'Statut stock',
-      'Quantité vendue',
-      'CA ventes',
-      'Quantité achetée',
-      'Montant achats reçus',
     ]
 
     const csv = [headers, ...rows].map((row) => row.join(';')).join('\n')
@@ -109,6 +65,12 @@ export async function GET(request: Request) {
 
     return csvResponse(csv, filename)
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error exporting products:', error)
 
     if (error instanceof Error) {

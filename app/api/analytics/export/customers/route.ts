@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getPeriodInfo } from '@/lib/analytics-helper'
 import { csvResponse, formatDateForCsv, escapeCsv } from '@/lib/csv'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function GET(request: Request) {
   try {
@@ -13,75 +15,34 @@ export async function GET(request: Request) {
     // Get period info
     const periodInfo = getPeriodInfo(period || undefined, startDate || undefined, endDate || undefined)
 
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
 
     // Fetch all customers for the store
     const customers = await prisma.customer.findMany({
       where: {
         storeId: store.id,
       },
-      include: {
-        sales: {
-          where: {
-            status: 'CONFIRMED',
-            saleDate: {
-              gte: periodInfo.startDate,
-              lte: periodInfo.endDate,
-            },
-          },
-          include: {
-            items: true,
-          },
-        },
+      orderBy: {
+        createdAt: 'desc',
       },
     })
 
-    // Calculate metrics for each customer
-    const rows = customers.map((customer) => {
-      const sales = customer.sales
-      const salesCount = sales.length
-      const productsBought = sales.reduce((sum, sale) => sum + sale.items.reduce((s, item) => s + item.quantity, 0), 0)
-      const revenue = sales.reduce((sum, sale) => sum + Number(sale.totalAmount), 0)
-      const averageOrderValue = salesCount > 0 ? revenue / salesCount : 0
-
-      const salesWithDates = sales.filter(s => s.saleDate)
-      const firstSaleDate = salesWithDates.length > 0
-        ? formatDateForCsv(new Date(Math.min(...salesWithDates.map(s => s.saleDate.getTime()))))
-        : ''
-      const lastSaleDate = salesWithDates.length > 0
-        ? formatDateForCsv(new Date(Math.max(...salesWithDates.map(s => s.saleDate.getTime()))))
-        : ''
-
-      return [
-        escapeCsv(customer.name),
-        escapeCsv(customer.phone || ''),
-        escapeCsv(customer.email || ''),
-        salesCount,
-        productsBought,
-        revenue,
-        averageOrderValue,
-        firstSaleDate,
-        lastSaleDate,
-      ]
-    })
+    // Build CSV rows
+    const rows = customers.map((customer) => [
+      escapeCsv(customer.name),
+      escapeCsv(customer.phone || ''),
+      escapeCsv(customer.email || ''),
+      escapeCsv(customer.address || ''),
+      formatDateForCsv(customer.createdAt),
+    ])
 
     const headers = [
-      'Client',
+      'Nom',
       'Téléphone',
       'Email',
-      'Nombre de ventes',
-      'Quantité de produits achetés',
-      'CA',
-      'Panier moyen',
-      'Première vente',
-      'Dernière vente',
+      'Adresse',
+      'Date de création',
     ]
 
     const csv = [headers, ...rows].map((row) => row.join(';')).join('\n')
@@ -94,6 +55,12 @@ export async function GET(request: Request) {
 
     return csvResponse(csv, filename)
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error exporting customers:', error)
 
     if (error instanceof Error) {

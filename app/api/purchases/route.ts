@@ -1,17 +1,13 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getCurrentStore } from '@/lib/get-current-store'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function GET() {
   try {
-    // Get the first available store (consistent with other APIs)
-    const store = await prisma.store.findFirst()
-    
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
     
     // Fetch purchases for this store with supplier and items
     const purchases = await prisma.purchase.findMany({
@@ -71,6 +67,12 @@ export async function GET() {
     
     return NextResponse.json(serializedPurchases)
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error fetching purchases:', error)
     return NextResponse.json(
       { error: 'Failed to fetch purchases' },
@@ -132,7 +134,7 @@ export async function POST(request: Request) {
         )
       }
       
-      if (typeof item.unitPrice !== 'number' || item.unitPrice < 0) {
+      if (typeof item.unitPrice !== 'number' || item.unitPrice <= 0) {
         return NextResponse.json(
           { error: 'Le prix unitaire doit être positif' },
           { status: 400 }
@@ -149,70 +151,10 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
-    
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
-    
-    // Verify supplier exists and belongs to this store
-    const supplier = await prisma.supplier.findFirst({
-      where: {
-        id: supplierId,
-        storeId: store.id,
-      },
-    })
-    
-    if (!supplier) {
-      return NextResponse.json(
-        { error: 'Fournisseur introuvable' },
-        { status: 404 }
-      )
-    }
-    
-    // Verify all products exist and belong to this store
-    const products = await prisma.product.findMany({
-      where: {
-        id: { in: productIds },
-        storeId: store.id,
-      },
-    })
-    
-    if (products.length !== productIds.length) {
-      return NextResponse.json(
-        { error: 'Un ou plusieurs produits introuvables ou n\'appartenant pas à ce magasin' },
-        { status: 404 }
-      )
-    }
-    
-    // Generate unique reference
-    let reference: string
-    let attempts = 0
-    const maxAttempts = 100
-    
-    do {
-      const timestamp = Date.now().toString().slice(-4)
-      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0')
-      reference = `ACH-${parsedDate.toISOString().slice(0, 10).replace(/-/g, '')}-${timestamp}${random}`
-      attempts++
-      
-      if (attempts > maxAttempts) {
-        return NextResponse.json(
-          { error: 'Impossible de générer une référence unique' },
-          { status: 500 }
-        )
-      }
-    } while (await prisma.purchase.findFirst({
-      where: {
-        reference,
-        storeId: store.id,
-      },
-    }))
-    
+
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
+
     // Calculate line totals and total amount
     const purchaseItems = items.map((item) => {
       const lineTotal = item.quantity * item.unitPrice
@@ -226,8 +168,54 @@ export async function POST(request: Request) {
     
     const totalAmount = purchaseItems.reduce((sum, item) => sum + item.total, 0)
     
-    // Create purchase and items in a single transaction
+    // Create purchase and items in a single transaction with validation
     const result = await prisma.$transaction(async (tx) => {
+      // Verify supplier exists and belongs to this store
+      const supplier = await tx.supplier.findFirst({
+        where: {
+          id: supplierId,
+          storeId: store.id,
+        },
+      })
+      
+      if (!supplier) {
+        throw new Error('Fournisseur introuvable')
+      }
+      
+      // Verify all products exist and belong to this store
+      const products = await tx.product.findMany({
+        where: {
+          id: { in: productIds },
+          storeId: store.id,
+        },
+      })
+      
+      if (products.length !== productIds.length) {
+        throw new Error('Un ou plusieurs produits introuvables ou n\'appartenant pas à ce magasin')
+      }
+      
+      // Generate unique reference with retry mechanism
+      let reference: string
+      let attempts = 0
+      const maxAttempts = 100
+      
+      do {
+        const timestamp = Date.now().toString().slice(-4)
+        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0')
+        reference = `ACH-${parsedDate.toISOString().slice(0, 10).replace(/-/g, '')}-${timestamp}${random}`
+        attempts++
+        
+        if (attempts > maxAttempts) {
+          throw new Error('Impossible de générer une référence unique')
+        }
+      } while (await tx.purchase.findFirst({
+        where: {
+          reference,
+          storeId: store.id,
+        },
+      }))
+      
+      // Create purchase - la contrainte @@unique([storeId, reference]) protège contre les doublons
       const purchase = await tx.purchase.create({
         data: {
           reference,
@@ -284,16 +272,44 @@ export async function POST(request: Request) {
     
     return NextResponse.json(serializedResponse, { status: 201 })
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error creating purchase:', error)
-    
-    // Handle unique constraint violation
+
+    // Handle unique constraint violation (reference already exists)
     if (error instanceof Error && error.message.includes('Unique constraint')) {
       return NextResponse.json(
         { error: 'Cette référence existe déjà' },
         { status: 409 }
       )
     }
-    
+
+    // Handle validation errors from transaction
+    if (error instanceof Error) {
+      if (error.message === 'Fournisseur introuvable') {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 404 }
+        )
+      }
+      if (error.message === 'Un ou plusieurs produits introuvables ou n\'appartenant pas à ce magasin') {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 404 }
+        )
+      }
+      if (error.message === 'Impossible de générer une référence unique') {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 500 }
+        )
+      }
+    }
+
     return NextResponse.json(
       { error: 'Failed to create purchase' },
       { status: 500 }

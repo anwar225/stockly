@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getCurrentStore } from '@/lib/get-current-store'
 
 export async function GET(
   request: Request,
@@ -8,14 +9,7 @@ export async function GET(
   try {
     const { id } = await params
 
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    const store = await getCurrentStore()
 
     // Find sale by id AND storeId (security check)
     const sale = await prisma.sale.findFirst({
@@ -73,6 +67,20 @@ export async function GET(
 
     return NextResponse.json(serializedSale)
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'UNAUTHENTICATED') {
+        return NextResponse.json(
+          { error: 'Non authentifié' },
+          { status: 401 }
+        )
+      }
+      if (error.message === 'NO_STORE_FOUND') {
+        return NextResponse.json(
+          { error: 'Aucun magasin disponible pour cette organisation' },
+          { status: 500 }
+        )
+      }
+    }
     console.error('Error fetching sale:', error)
     return NextResponse.json(
       { error: 'Failed to fetch sale' },

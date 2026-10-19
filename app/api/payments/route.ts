@@ -1,18 +1,13 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { Decimal } from '@/lib/generated/prisma/internal/prismaNamespace'
+import { getCurrentStore } from '@/lib/get-current-store'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
+import { Prisma } from '@/lib/generated/prisma/client'
 
 export async function GET() {
   try {
-    // Get the first available store (consistent with other APIs)
-    const store = await prisma.store.findFirst()
-
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    const store = await getCurrentStore()
 
     // Fetch payments for this store with invoice and sale details
     const payments = await prisma.payment.findMany({
@@ -67,6 +62,20 @@ export async function GET() {
 
     return NextResponse.json(serializedPayments)
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'UNAUTHENTICATED') {
+        return NextResponse.json(
+          { error: 'Non authentifié' },
+          { status: 401 }
+        )
+      }
+      if (error.message === 'NO_STORE_FOUND') {
+        return NextResponse.json(
+          { error: 'Aucun magasin disponible pour cette organisation' },
+          { status: 500 }
+        )
+      }
+    }
     console.error('Error fetching payments:', error)
     return NextResponse.json(
       { error: 'Failed to fetch payments' },
@@ -120,14 +129,8 @@ export async function POST(request: Request) {
       )
     }
 
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
 
     // Perform payment creation in a transaction with row locking
     const result = await prisma.$transaction(async (tx) => {
@@ -167,7 +170,7 @@ export async function POST(request: Request) {
       const remaining = invoice.totalAmount.sub(totalPaid)
 
       // Validate payment amount doesn't exceed remaining
-      const paymentAmount = new Decimal(amount)
+      const paymentAmount = new Prisma.Decimal(amount)
       if (paymentAmount.gt(remaining)) {
         throw new Error('Payment exceeds remaining amount')
       }
@@ -230,6 +233,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json(serializedPayment, { status: 201 })
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error creating payment:', error)
 
     // Handle specific errors

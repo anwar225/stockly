@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getPeriodInfo } from '@/lib/analytics-helper'
+import { getCurrentStore } from '@/lib/get-current-store'
 
 export async function GET(request: Request) {
   try {
@@ -12,14 +13,7 @@ export async function GET(request: Request) {
     // Get period info
     const periodInfo = getPeriodInfo(period || undefined, startDate || undefined, endDate || undefined)
 
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    const store = await getCurrentStore()
 
     // Get all products for this store
     const products = await prisma.product.findMany({
@@ -267,6 +261,20 @@ export async function GET(request: Request) {
 
     return NextResponse.json(response)
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'UNAUTHENTICATED') {
+        return NextResponse.json(
+          { error: 'Non authentifié' },
+          { status: 401 }
+        )
+      }
+      if (error.message === 'NO_STORE_FOUND') {
+        return NextResponse.json(
+          { error: 'Aucun magasin disponible pour cette organisation' },
+          { status: 500 }
+        )
+      }
+    }
     console.error('Error fetching product analytics:', error)
 
     if (error instanceof Error) {

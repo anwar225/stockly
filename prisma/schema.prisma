@@ -10,6 +10,7 @@ datasource db {
 enum UserRole {
   OWNER
   ADMIN
+  MANAGER
   EMPLOYEE
 }
 
@@ -59,12 +60,31 @@ model User {
   id             String   @id @default(cuid())
   email          String   @unique
   name           String?
-  role           UserRole @default(EMPLOYEE)
+  role           UserRole @default(EMPLOYEE) // @deprecated: Use StoreMember.role instead
+  active         Boolean  @default(true)
   organizationId String
+  passwordHash   String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  storeMembers  StoreMember[]
+}
+
+model StoreMember {
+  id        String   @id @default(cuid())
+  userId    String
+  storeId   String
+  role      UserRole @default(EMPLOYEE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storeId])
+  @@index([userId])
+  @@index([storeId])
 }
 
 model Store {
@@ -85,6 +105,7 @@ model Store {
   sales        Sale[]
   invoices     Invoice[]
   payments     Payment[]
+  members      StoreMember[]
 
   @@index([organizationId])
 }

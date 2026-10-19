@@ -1,17 +1,12 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getCurrentStore } from '@/lib/get-current-store'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function GET() {
   try {
-    // Get the first available store (consistent with other APIs)
-    const store = await prisma.store.findFirst()
-    
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    const store = await getCurrentStore()
     
     // Fetch sales for this store with customer and items
     const sales = await prisma.sale.findMany({
@@ -65,6 +60,20 @@ export async function GET() {
     
     return NextResponse.json(serializedSales)
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'UNAUTHENTICATED') {
+        return NextResponse.json(
+          { error: 'Non authentifié' },
+          { status: 401 }
+        )
+      }
+      if (error.message === 'NO_STORE_FOUND') {
+        return NextResponse.json(
+          { error: 'Aucun magasin disponible pour cette organisation' },
+          { status: 500 }
+        )
+      }
+    }
     console.error('Error fetching sales:', error)
     return NextResponse.json(
       { error: 'Failed to fetch sales' },
@@ -136,91 +145,77 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
-    
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
-    
-    // Verify customer exists and belongs to this store
-    const customer = await prisma.customer.findFirst({
-      where: {
-        id: customerId,
-        storeId: store.id,
-      },
-    })
-    
-    if (!customer) {
-      return NextResponse.json(
-        { error: 'Client introuvable' },
-        { status: 404 }
-      )
-    }
-    
-    // Verify all products exist and belong to this store
-    const products = await prisma.product.findMany({
-      where: {
-        id: { in: productIds },
-        storeId: store.id,
-      },
-    })
-    
-    if (products.length !== productIds.length) {
-      return NextResponse.json(
-        { error: 'Un ou plusieurs produits introuvables ou n\'appartenant pas à ce magasin' },
-        { status: 404 }
-      )
-    }
-    
-    // Generate unique reference
-    let reference: string
-    let attempts = 0
-    const maxAttempts = 100
-    
-    do {
-      const timestamp = Date.now().toString().slice(-4)
-      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0')
-      reference = `VTE-${parsedDate.toISOString().slice(0, 10).replace(/-/g, '')}-${timestamp}${random}`
-      attempts++
-      
-      if (attempts > maxAttempts) {
-        return NextResponse.json(
-          { error: 'Impossible de générer une référence unique' },
-          { status: 500 }
-        )
-      }
-    } while (await prisma.sale.findFirst({
-      where: {
-        reference,
-        storeId: store.id,
-      },
-    }))
-    
-    // Create product map for price lookup
-    const productMap = new Map(products.map((p) => [p.id, p]))
-    
-    // Calculate line totals and total amount using server-side prices
-    const saleItems = items.map((item) => {
-      const product = productMap.get(item.productId)!
-      const unitPrice = Number(product.sellingPrice)
-      const lineTotal = item.quantity * unitPrice
-      return {
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice,
-        total: lineTotal,
-      }
-    })
-    
-    const totalAmount = saleItems.reduce((sum, item) => sum + item.total, 0)
-    
-    // Create sale and items in a single transaction
-    // DRAFT creation does NOT modify stock or create StockMovement
+
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER, EMPLOYEE
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER', 'EMPLOYEE'])
+
+    // Create sale and items in a single transaction with validation
     const result = await prisma.$transaction(async (tx) => {
+      // Verify customer exists and belongs to this store
+      const customer = await tx.customer.findFirst({
+        where: {
+          id: customerId,
+          storeId: store.id,
+        },
+      })
+      
+      if (!customer) {
+        throw new Error('Client introuvable')
+      }
+      
+      // Verify all products exist and belong to this store
+      const products = await tx.product.findMany({
+        where: {
+          id: { in: productIds },
+          storeId: store.id,
+        },
+      })
+      
+      if (products.length !== productIds.length) {
+        throw new Error('Un ou plusieurs produits introuvables ou n\'appartenant pas à ce magasin')
+      }
+      
+      // Create product map for price lookup
+      const productMap = new Map(products.map((p) => [p.id, p]))
+      
+      // Calculate line totals and total amount using server-side prices
+      const saleItems = items.map((item) => {
+        const product = productMap.get(item.productId)!
+        const unitPrice = Number(product.sellingPrice)
+        const lineTotal = item.quantity * unitPrice
+        return {
+          productId: item.productId,
+          quantity: item.quantity,
+          unitPrice,
+          total: lineTotal,
+        }
+      })
+      
+      const totalAmount = saleItems.reduce((sum, item) => sum + item.total, 0)
+      
+      // Generate unique reference with retry mechanism
+      let reference: string
+      let attempts = 0
+      const maxAttempts = 100
+      
+      do {
+        const timestamp = Date.now().toString().slice(-4)
+        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0')
+        reference = `VTE-${parsedDate.toISOString().slice(0, 10).replace(/-/g, '')}-${timestamp}${random}`
+        attempts++
+        
+        if (attempts > maxAttempts) {
+          throw new Error('Impossible de générer une référence unique')
+        }
+      } while (await tx.sale.findFirst({
+        where: {
+          reference,
+          storeId: store.id,
+        },
+      }))
+      
+      // Create sale - la contrainte @@unique([storeId, reference]) protège contre les doublons
+      // DRAFT creation does NOT modify stock or create StockMovement
       const sale = await tx.sale.create({
         data: {
           reference,
@@ -277,16 +272,44 @@ export async function POST(request: Request) {
     
     return NextResponse.json(serializedResponse, { status: 201 })
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error creating sale:', error)
-    
-    // Handle unique constraint violation
+
+    // Handle unique constraint violation (reference already exists)
     if (error instanceof Error && error.message.includes('Unique constraint')) {
       return NextResponse.json(
         { error: 'Cette référence existe déjà' },
         { status: 409 }
       )
     }
-    
+
+    // Handle validation errors from transaction
+    if (error instanceof Error) {
+      if (error.message === 'Client introuvable') {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 404 }
+        )
+      }
+      if (error.message === 'Un ou plusieurs produits introuvables ou n\'appartenent pas à ce magasin') {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 404 }
+        )
+      }
+      if (error.message === 'Impossible de générer une référence unique') {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 500 }
+        )
+      }
+    }
+
     return NextResponse.json(
       { error: 'Failed to create sale' },
       { status: 500 }

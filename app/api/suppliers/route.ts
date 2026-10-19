@@ -1,17 +1,12 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getCurrentStore } from '@/lib/get-current-store'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function GET() {
   try {
-    // Get the first available store (consistent with other APIs)
-    const store = await prisma.store.findFirst()
-    
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    const store = await getCurrentStore()
     
     // Fetch suppliers for this store, sorted by name
     const suppliers = await prisma.supplier.findMany({
@@ -25,6 +20,20 @@ export async function GET() {
     
     return NextResponse.json(suppliers)
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'UNAUTHENTICATED') {
+        return NextResponse.json(
+          { error: 'Non authentifié' },
+          { status: 401 }
+        )
+      }
+      if (error.message === 'NO_STORE_FOUND') {
+        return NextResponse.json(
+          { error: 'Aucun magasin disponible pour cette organisation' },
+          { status: 500 }
+        )
+      }
+    }
     console.error('Error fetching suppliers:', error)
     return NextResponse.json(
       { error: 'Failed to fetch suppliers' },
@@ -57,16 +66,10 @@ export async function POST(request: Request) {
         )
       }
     }
-    
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
-    
+
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
+
     // Check for duplicate supplier name in this store
     const existingSupplier = await prisma.supplier.findFirst({
       where: {
@@ -97,8 +100,14 @@ export async function POST(request: Request) {
     
     return NextResponse.json(supplier, { status: 201 })
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error creating supplier:', error)
-    
+
     // Handle unique constraint violation
     if (error instanceof Error && error.message.includes('Unique constraint')) {
       return NextResponse.json(
@@ -106,7 +115,7 @@ export async function POST(request: Request) {
         { status: 409 }
       )
     }
-    
+
     return NextResponse.json(
       { error: 'Failed to create supplier' },
       { status: 500 }

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getPeriodInfo } from '@/lib/analytics-helper'
 import { csvResponse, formatDateForCsv, formatPaymentMethodForCsv, escapeCsv } from '@/lib/csv'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function GET(request: Request) {
   try {
@@ -13,14 +15,8 @@ export async function GET(request: Request) {
     // Get period info
     const periodInfo = getPeriodInfo(period || undefined, startDate || undefined, endDate || undefined)
 
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
 
     // Fetch payments for the period
     const payments = await prisma.payment.findMany({
@@ -48,23 +44,21 @@ export async function GET(request: Request) {
       ],
     })
 
-    // Generate rows
-    const rows = payments.map((payment) => {
-      return [
-        formatDateForCsv(payment.paymentDate),
-        escapeCsv(payment.reference),
-        escapeCsv(payment.invoice.reference),
-        escapeCsv(payment.invoice.sale.customer.name),
-        formatPaymentMethodForCsv(payment.method),
-        Number(payment.amount),
-        escapeCsv(payment.externalReference || ''),
-        escapeCsv(payment.notes || ''),
-      ]
-    })
+    // Build CSV rows
+    const rows = payments.map((payment) => [
+      escapeCsv(payment.reference || ''),
+      formatDateForCsv(payment.paymentDate),
+      escapeCsv(payment.invoice.reference),
+      escapeCsv(payment.invoice.sale.customer.name),
+      formatPaymentMethodForCsv(payment.method),
+      Number(payment.amount),
+      escapeCsv(payment.externalReference || ''),
+      escapeCsv(payment.notes || ''),
+    ])
 
     const headers = [
+      'Référence',
       'Date',
-      'Référence paiement',
       'Facture',
       'Client',
       'Méthode',
@@ -83,6 +77,12 @@ export async function GET(request: Request) {
 
     return csvResponse(csv, filename)
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error exporting payments:', error)
 
     if (error instanceof Error) {

@@ -8,7 +8,7 @@ import type { PurchaseFormData, PurchaseItemFormData } from '@/types/purchase.ty
 const purchaseItemSchema = z.object({
   productId: z.string().min(1, 'Le produit est requis'),
   quantity: z.number().int().positive('La quantité doit être positive'),
-  unitPrice: z.number().nonnegative('Le prix doit être positif'),
+  unitPrice: z.number().positive('Le prix doit être positif'),
 })
 
 const purchaseSchema = z.object({
@@ -42,7 +42,7 @@ export function PurchaseDialog({ isOpen, onClose, onSubmit, products, suppliers,
       supplierId: '',
       purchaseDate: new Date().toISOString().split('T')[0],
       notes: '',
-      items: [{ productId: '', quantity: 1, unitPrice: 0 }],
+      items: [{ productId: '', quantity: 1, unitPrice: '' as any }],
     },
   })
 
@@ -62,7 +62,7 @@ export function PurchaseDialog({ isOpen, onClose, onSubmit, products, suppliers,
   }
 
   const addItem = () => {
-    append({ productId: '', quantity: 1, unitPrice: 0 })
+    append({ productId: '', quantity: 1, unitPrice: '' as any })
   }
 
   const removeItem = (index: number) => {
@@ -71,12 +71,16 @@ export function PurchaseDialog({ isOpen, onClose, onSubmit, products, suppliers,
     }
   }
 
-  const calculateLineTotal = (quantity: number, unitPrice: number) => {
-    return quantity * unitPrice
+  const calculateLineTotal = (quantity: number, unitPrice: number | string) => {
+    const price = typeof unitPrice === 'string' ? 0 : unitPrice
+    return quantity * price
   }
 
   const calculateTotal = (items: PurchaseItemFormData[]) => {
-    return items.reduce((sum, item) => sum + calculateLineTotal(item.quantity, item.unitPrice), 0)
+    return items.reduce((sum, item) => {
+      const price = typeof item.unitPrice === 'string' ? 0 : item.unitPrice
+      return sum + calculateLineTotal(item.quantity, price)
+    }, 0)
   }
 
   if (!isOpen) return null
@@ -195,7 +199,7 @@ export function PurchaseDialog({ isOpen, onClose, onSubmit, products, suppliers,
                         <input
                           type="number"
                           {...register(`items.${index}.unitPrice`, { valueAsNumber: true })}
-                          min="0"
+                          min="0.01"
                           step="0.01"
                           className="h-9 w-full rounded border border-slate-200 px-2 text-xs outline-none focus:border-emerald-400"
                         />
@@ -204,7 +208,11 @@ export function PurchaseDialog({ isOpen, onClose, onSubmit, products, suppliers,
                         )}
                       </td>
                       <td className="px-3 py-2 text-sm font-medium text-slate-700">
-                        {calculateLineTotal(formItems[index]?.quantity || 0, formItems[index]?.unitPrice || 0).toLocaleString('fr-FR')} MAD
+                        {(() => {
+                          const qty = formItems[index]?.quantity || 0
+                          const price = typeof formItems[index]?.unitPrice === 'string' ? 0 : (formItems[index]?.unitPrice || 0)
+                          return calculateLineTotal(qty, price).toLocaleString('fr-FR')
+                        })()} MAD
                       </td>
                       <td className="px-3 py-2">
                         {fields.length > 1 && (

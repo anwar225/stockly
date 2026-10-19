@@ -1,17 +1,12 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getCurrentStore } from '@/lib/get-current-store'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function GET() {
   try {
-    // Get the first available store (consistent with other APIs)
-    const store = await prisma.store.findFirst()
-
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    const store = await getCurrentStore()
 
     // Fetch invoices for this store with sale and customer
     const invoices = await prisma.invoice.findMany({
@@ -59,6 +54,20 @@ export async function GET() {
 
     return NextResponse.json(serializedInvoices)
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'UNAUTHENTICATED') {
+        return NextResponse.json(
+          { error: 'Non authentifié' },
+          { status: 401 }
+        )
+      }
+      if (error.message === 'NO_STORE_FOUND') {
+        return NextResponse.json(
+          { error: 'Aucun magasin disponible pour cette organisation' },
+          { status: 500 }
+        )
+      }
+    }
     console.error('Error fetching invoices:', error)
     return NextResponse.json(
       { error: 'Failed to fetch invoices' },
@@ -109,14 +118,8 @@ export async function POST(request: Request) {
       }
     }
 
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
 
     // Verify sale exists and belongs to this store
     const sale = await prisma.sale.findFirst({
@@ -226,6 +229,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json(serializedInvoice, { status: 201 })
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error creating invoice:', error)
 
     // Handle unique constraint violation

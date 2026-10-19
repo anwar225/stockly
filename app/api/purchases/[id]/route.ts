@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getCurrentStore } from '@/lib/get-current-store'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function GET(
   request: Request,
@@ -8,14 +11,8 @@ export async function GET(
   try {
     const { id } = await params
 
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
 
     // Find purchase by id AND storeId (security check)
     const purchase = await prisma.purchase.findFirst({
@@ -79,6 +76,12 @@ export async function GET(
 
     return NextResponse.json(serializedPurchase)
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error fetching purchase:', error)
     return NextResponse.json(
       { error: 'Failed to fetch purchase' },
@@ -94,14 +97,8 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    // Vérifier les permissions : OWNER, ADMIN
+    const { store } = await requireRole(['OWNER', 'ADMIN'])
 
     // Find purchase by id AND storeId
     const purchase = await prisma.purchase.findFirst({
@@ -141,6 +138,12 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error deleting purchase:', error)
     return NextResponse.json(
       { error: 'Failed to delete purchase' },

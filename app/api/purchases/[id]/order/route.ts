@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function POST(
   request: Request,
@@ -7,15 +9,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
     
     // Find purchase by id AND storeId
     const purchase = await prisma.purchase.findFirst({
@@ -50,6 +46,12 @@ export async function POST(
     
     return NextResponse.json(updatedPurchase)
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error ordering purchase:', error)
     return NextResponse.json(
       { error: 'Failed to order purchase' },

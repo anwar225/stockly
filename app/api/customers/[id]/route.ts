@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getCurrentStore } from '@/lib/get-current-store'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function GET(
   request: Request,
@@ -7,15 +10,8 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+
+    const store = await getCurrentStore()
     
     // Find customer by id AND storeId (security check)
     const customer = await prisma.customer.findFirst({
@@ -34,6 +30,20 @@ export async function GET(
     
     return NextResponse.json(customer)
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'UNAUTHENTICATED') {
+        return NextResponse.json(
+          { error: 'Non authentifié' },
+          { status: 401 }
+        )
+      }
+      if (error.message === 'NO_STORE_FOUND') {
+        return NextResponse.json(
+          { error: 'Aucun magasin disponible pour cette organisation' },
+          { status: 500 }
+        )
+      }
+    }
     console.error('Error fetching customer:', error)
     return NextResponse.json(
       { error: 'Failed to fetch customer' },
@@ -70,16 +80,10 @@ export async function PUT(
         )
       }
     }
-    
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
-    
+
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
+
     // Check if customer exists and belongs to this store
     const existingCustomer = await prisma.customer.findFirst({
       where: {
@@ -109,6 +113,12 @@ export async function PUT(
     
     return NextResponse.json(customer)
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error updating customer:', error)
     return NextResponse.json(
       { error: 'Failed to update customer' },
@@ -123,16 +133,10 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
-    
+
+    // Vérifier les permissions : OWNER, ADMIN
+    const { store } = await requireRole(['OWNER', 'ADMIN'])
+
     // Check if customer exists and belongs to this store
     const customer = await prisma.customer.findFirst({
       where: {
@@ -170,8 +174,14 @@ export async function DELETE(
     
     return NextResponse.json({ message: 'Client supprimé avec succès' })
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error deleting customer:', error)
-    
+
     // Handle foreign key constraint violation
     if (error instanceof Error && error.message.includes('Foreign key constraint')) {
       return NextResponse.json(
@@ -179,7 +189,7 @@ export async function DELETE(
         { status: 409 }
       )
     }
-    
+
     return NextResponse.json(
       { error: 'Failed to delete customer' },
       { status: 500 }

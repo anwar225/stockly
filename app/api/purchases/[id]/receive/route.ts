@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function POST(
   request: Request,
@@ -7,46 +9,52 @@ export async function POST(
 ) {
   try {
     const { id } = await params
+
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
     
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
-    
-    // Find purchase by id AND storeId
-    const purchase = await prisma.purchase.findFirst({
-      where: {
-        id,
-        storeId: store.id,
-      },
-      include: {
-        items: true,
-      },
-    })
-    
-    if (!purchase) {
-      return NextResponse.json(
-        { error: 'Achat introuvable' },
-        { status: 404 }
-      )
-    }
-    
-    // Check if purchase can be received (must be ORDERED)
-    if (purchase.status !== 'ORDERED') {
-      return NextResponse.json(
-        { error: 'Cet achat ne peut pas être réceptionné. Statut actuel: ' + purchase.status },
-        { status: 400 }
-      )
-    }
-    
-    // Receive purchase in a single transaction
+    // Receive purchase in a single transaction with atomic status transition
     const result = await prisma.$transaction(async (tx) => {
+      // Find purchase by id AND storeId WITHIN transaction
+      const purchase = await tx.purchase.findFirst({
+        where: {
+          id,
+          storeId: store.id,
+        },
+        include: {
+          items: true,
+        },
+      })
+
+      if (!purchase) {
+        throw new Error('Purchase not found')
+      }
+
+      // Check if purchase can be received (must be ORDERED) WITHIN transaction
+      if (purchase.status !== 'ORDERED') {
+        throw new Error('Purchase cannot be received. Current status: ' + purchase.status)
+      }
+
       // Create stock movements and update product stock for each item
       for (const item of purchase.items) {
+        // Verify product belongs to this store before updating
+        const updateResult = await tx.product.updateMany({
+          where: {
+            id: item.productId,
+            storeId: store.id,
+          },
+          data: {
+            stock: {
+              increment: item.quantity,
+            },
+          },
+        })
+
+        // If no rows were affected, product doesn't belong to this store
+        if (updateResult.count === 0) {
+          throw new Error('Product does not belong to this store')
+        }
+
         // Create stock movement
         await tx.stockMovement.create({
           data: {
@@ -57,19 +65,9 @@ export async function POST(
             storeId: store.id,
           },
         })
-        
-        // Update product stock
-        await tx.product.update({
-          where: { id: item.productId },
-          data: {
-            stock: {
-              increment: item.quantity,
-            },
-          },
-        })
       }
-      
-      // Update purchase status to RECEIVED
+
+      // Update purchase status to RECEIVED WITHIN transaction
       const updatedPurchase = await tx.purchase.update({
         where: { id },
         data: {
@@ -89,7 +87,7 @@ export async function POST(
           },
         },
       })
-      
+
       return updatedPurchase
     })
     
@@ -127,7 +125,38 @@ export async function POST(
     
     return NextResponse.json(serializedResponse)
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error receiving purchase:', error)
+
+    // Handle specific transaction errors
+    if (error instanceof Error) {
+      if (error.message === 'Purchase not found') {
+        return NextResponse.json(
+          { error: 'Achat introuvable' },
+          { status: 404 }
+        )
+      }
+
+      if (error.message.startsWith('Purchase cannot be received')) {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 400 }
+        )
+      }
+
+      if (error.message === 'Product does not belong to this store') {
+        return NextResponse.json(
+          { error: 'Un produit n\'appartient pas à ce magasin' },
+          { status: 400 }
+        )
+      }
+    }
+
     return NextResponse.json(
       { error: 'Failed to receive purchase' },
       { status: 500 }

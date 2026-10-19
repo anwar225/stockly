@@ -1,17 +1,13 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { csvResponse, escapeCsv } from '@/lib/csv'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function GET(request: Request) {
   try {
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
 
     // Fetch all products for the store with current stock
     const products = await prisma.product.findMany({
@@ -22,57 +18,52 @@ export async function GET(request: Request) {
         category: true,
         brand: true,
       },
+      orderBy: {
+        name: 'asc',
+      },
     })
 
-    // Calculate stock value for each product
-    const rows = products.map((product) => {
-      const stockValue = product.stock * Number(product.purchasePrice)
-
-      // Stock status
-      let stockStatus = 'En stock'
-      if (product.stock === 0) {
-        stockStatus = 'Rupture de stock'
-      } else if (product.stock <= product.minStock) {
-        stockStatus = 'Stock faible'
-      }
-
-      return [
-        escapeCsv(product.name),
-        escapeCsv(product.sku || ''),
-        escapeCsv(product.category?.name || ''),
-        escapeCsv(product.brand?.name || ''),
-        product.stock,
-        product.minStock,
-        stockStatus,
-        Number(product.purchasePrice),
-        stockValue,
-      ]
-    })
+    // Build CSV rows
+    const rows = products.map((product) => [
+      escapeCsv(product.name),
+      escapeCsv(product.sku),
+      escapeCsv(product.category?.name || ''),
+      escapeCsv(product.brand?.name || ''),
+      Number(product.purchasePrice),
+      Number(product.sellingPrice),
+      product.stock,
+      product.minStock,
+    ])
 
     const headers = [
-      'Produit',
+      'Nom',
       'SKU',
       'Catégorie',
       'Marque',
-      'Stock actuel',
+      'Prix d\'achat',
+      'Prix de vente',
+      'Stock',
       'Stock minimum',
-      'Statut',
-      'Prix achat actuel',
-      'Valeur actuelle du stock au coût d\'achat actuel',
     ]
 
     const csv = [headers, ...rows].map((row) => row.join(';')).join('\n')
 
-    // Generate filename with current date
+    // Generate filename based on period
     const date = new Date()
     const year = date.getFullYear()
     const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    const filename = `stockly-stock-${year}-${month}-${day}.csv`
+    const filename = `stockly-stock-${year}-${month}.csv`
 
     return csvResponse(csv, filename)
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error exporting stock:', error)
+
     return NextResponse.json(
       { error: 'Failed to export stock' },
       { status: 500 }

@@ -1,17 +1,12 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getCurrentStore } from '@/lib/get-current-store'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function GET() {
   try {
-    // Get the first available store (consistent with other APIs)
-    const store = await prisma.store.findFirst()
-    
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    const store = await getCurrentStore()
     
     // Fetch movements for this store with product info
     const movements = await prisma.stockMovement.findMany({
@@ -50,6 +45,20 @@ export async function GET() {
     
     return NextResponse.json(serializedMovements)
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'UNAUTHENTICATED') {
+        return NextResponse.json(
+          { error: 'Non authentifié' },
+          { status: 401 }
+        )
+      }
+      if (error.message === 'NO_STORE_FOUND') {
+        return NextResponse.json(
+          { error: 'Aucun magasin disponible pour cette organisation' },
+          { status: 500 }
+        )
+      }
+    }
     console.error('Error fetching movements:', error)
     return NextResponse.json(
       { error: 'Failed to fetch movements' },
@@ -107,16 +116,10 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
-    
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
-    
+
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
+
     // Verify product exists and belongs to this store
     const product = await prisma.product.findUnique({
       where: { id: productId },
@@ -136,29 +139,71 @@ export async function POST(request: Request) {
       )
     }
     
-    // Calculate new stock based on movement type
-    let newStock: number
-    if (type === 'IN') {
-      newStock = product.stock + quantity
-    } else if (type === 'OUT') {
-      if (quantity > product.stock) {
-        return NextResponse.json(
-          { error: `Stock insuffisant. Stock actuel: ${product.stock}, Quantité demandée: ${quantity}` },
-          { status: 400 }
-        )
-      }
-      newStock = product.stock - quantity
-    } else if (type === 'ADJUSTMENT') {
-      newStock = quantity
-    } else {
-      return NextResponse.json(
-        { error: 'Type de mouvement invalide' },
-        { status: 400 }
-      )
-    }
-    
     // Create movement and update product stock in a single transaction
     const result = await prisma.$transaction(async (tx) => {
+      let updatedProduct
+      
+      if (type === 'IN') {
+        // Increment stock atomically
+        updatedProduct = await tx.product.update({
+          where: { id: productId },
+          data: {
+            stock: {
+              increment: quantity,
+            },
+          },
+          include: {
+            category: true,
+            brand: true,
+          },
+        })
+      } else if (type === 'OUT') {
+        // Decrement stock atomically with condition to prevent negative stock
+        const updateResult = await tx.product.updateMany({
+          where: {
+            id: productId,
+            storeId: store.id,
+            stock: {
+              gte: quantity,
+            },
+          },
+          data: {
+            stock: {
+              decrement: quantity,
+            },
+          },
+        })
+        
+        // If no rows were affected, stock was insufficient
+        if (updateResult.count === 0) {
+          const currentProduct = await tx.product.findUnique({
+            where: { id: productId },
+            select: { stock: true },
+          })
+          throw new Error(`Stock insuffisant. Stock actuel: ${currentProduct?.stock || 0}, Quantité demandée: ${quantity}`)
+        }
+        
+        updatedProduct = await tx.product.findUniqueOrThrow({
+          where: { id: productId },
+          include: {
+            category: true,
+            brand: true,
+          },
+        })
+      } else if (type === 'ADJUSTMENT') {
+        // Set stock to exact value
+        updatedProduct = await tx.product.update({
+          where: { id: productId },
+          data: { stock: quantity },
+          include: {
+            category: true,
+            brand: true,
+          },
+        })
+      } else {
+        throw new Error('Type de mouvement invalide')
+      }
+      
       // Create the movement
       const movement = await tx.stockMovement.create({
         data: {
@@ -170,17 +215,7 @@ export async function POST(request: Request) {
         },
       })
       
-      // Update product stock
-      const updatedProduct = await tx.product.update({
-        where: { id: productId },
-        data: { stock: newStock },
-        include: {
-          category: true,
-          brand: true,
-        },
-      })
-      
-      return { movement, updatedProduct }
+      return { movement, updatedProduct: updatedProduct! }
     })
     
     // Serialize response
@@ -207,7 +242,24 @@ export async function POST(request: Request) {
     
     return NextResponse.json(serializedResponse, { status: 201 })
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error creating movement:', error)
+
+    // Handle specific errors
+    if (error instanceof Error) {
+      if (error.message.startsWith('Stock insuffisant')) {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 409 }
+        )
+      }
+    }
+
     return NextResponse.json(
       { error: 'Failed to create movement' },
       { status: 500 }

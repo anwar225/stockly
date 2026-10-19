@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getPeriodInfo } from '@/lib/analytics-helper'
 import { csvResponse, formatDateForCsv, formatPurchaseStatusForCsv, escapeCsv } from '@/lib/csv'
+import { requireRole } from '@/lib/auth-helpers'
+import { handleAuthError } from '@/lib/auth-helpers'
 
 export async function GET(request: Request) {
   try {
@@ -13,20 +15,13 @@ export async function GET(request: Request) {
     // Get period info
     const periodInfo = getPeriodInfo(period || undefined, startDate || undefined, endDate || undefined)
 
-    // Get the first available store
-    const store = await prisma.store.findFirst()
-    if (!store) {
-      return NextResponse.json(
-        { error: 'Aucun magasin disponible' },
-        { status: 500 }
-      )
-    }
+    // Vérifier les permissions : OWNER, ADMIN, MANAGER
+    const { store } = await requireRole(['OWNER', 'ADMIN', 'MANAGER'])
 
     // Fetch received purchases for the period
     const purchases = await prisma.purchase.findMany({
       where: {
         storeId: store.id,
-        status: 'RECEIVED',
         purchaseDate: {
           gte: periodInfo.startDate,
           lte: periodInfo.endDate,
@@ -36,7 +31,12 @@ export async function GET(request: Request) {
         supplier: true,
         items: {
           include: {
-            product: true,
+            product: {
+              include: {
+                category: true,
+                brand: true,
+              },
+            },
           },
         },
       },
@@ -46,11 +46,11 @@ export async function GET(request: Request) {
       ],
     })
 
-    // Calculate totals for each purchase
+    // Build CSV rows
     const rows = purchases.map((purchase) => {
       const totalProducts = purchase.items.length
       const totalQuantity = purchase.items.reduce((sum, item) => sum + item.quantity, 0)
-      const totalAmount = purchase.items.reduce((sum, item) => sum + Number(item.total), 0)
+      const totalAmount = Number(purchase.totalAmount)
 
       return [
         escapeCsv(purchase.reference),
@@ -83,6 +83,12 @@ export async function GET(request: Request) {
 
     return csvResponse(csv, filename)
   } catch (error) {
+    // Gestion centralisée des erreurs d'authentification
+    const authError = handleAuthError(error as Error)
+    if (authError.status !== 500) {
+      return authError
+    }
+
     console.error('Error exporting purchases:', error)
 
     if (error instanceof Error) {

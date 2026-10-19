@@ -245,6 +245,19 @@ export default function StocklyApp() {
         const response = await fetch('/api/purchases')
         
         if (!response.ok) {
+          // Gérer spécifiquement les codes d'erreur HTTP
+          if (response.status === 403) {
+            setPurchasesError('Accès refusé : Les achats ne sont accessibles qu\'aux rôles OWNER, ADMIN et MANAGER')
+            return
+          }
+          if (response.status === 401) {
+            setPurchasesError('Non authentifié : Veuillez vous reconnecter')
+            return
+          }
+          if (response.status === 500) {
+            setPurchasesError('Erreur serveur : Impossible de charger les achats')
+            return
+          }
           throw new Error('Failed to fetch purchases')
         }
         
@@ -252,7 +265,10 @@ export default function StocklyApp() {
         setPurchaseList(purchases)
       } catch (err) {
         console.error('Error fetching purchases:', err)
-        setPurchasesError('Impossible de charger les achats')
+        // Ne pas écraser l'erreur spécifique si elle a déjà été définie
+        if (!purchasesError) {
+          setPurchasesError('Impossible de charger les achats')
+        }
       } finally {
         setPurchasesLoading(false)
       }

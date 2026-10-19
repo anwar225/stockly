@@ -1,4 +1,5 @@
-import { Bell, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Menu, Search } from 'lucide-react'
+import { Bell, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Menu, Search, LogOut } from 'lucide-react'
+import { signOut } from 'next-auth/react'
 
 interface HeaderProps {
   collapsed: boolean
@@ -53,6 +54,14 @@ export function Header({ collapsed, search, onSearchChange, onToggleCollapse, on
         </button>
         <div className="hidden h-7 w-px bg-slate-200 sm:block" />
         <div className="flex items-center gap-2">
+          <button
+            aria-label="Déconnexion"
+            onClick={() => signOut({ callbackUrl: '/login' })}
+            className="rounded-lg p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-700"
+            title="Déconnexion"
+          >
+            <LogOut size={19} />
+          </button>
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">
             AE
           </div>
