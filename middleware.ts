@@ -35,14 +35,15 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/login", req.url))
   }
 
-  // Redirect to login if not authenticated and not on login page
-  if (!isAuthenticated && pathname !== "/login") {
+  // Redirect to login if not authenticated and not on public pages
+  const publicPages = ["/", "/login"]
+  if (!isAuthenticated && !publicPages.includes(pathname)) {
     return NextResponse.redirect(new URL("/login", req.url))
   }
 
-  // Redirect to app if authenticated and on login page
+  // Redirect to dashboard if authenticated and on login page
   if (isAuthenticated && pathname === "/login") {
-    return NextResponse.redirect(new URL("/", req.url))
+    return NextResponse.redirect(new URL("/dashboard", req.url))
   }
 
   return NextResponse.next()

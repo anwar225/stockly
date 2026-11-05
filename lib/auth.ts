@@ -68,6 +68,10 @@ export const authOptions: NextAuthOptions = {
       }
       return session
     },
+    async redirect({ url, baseUrl }) {
+      // Redirect to dashboard after login
+      return baseUrl + "/dashboard"
+    },
   },
   pages: {
     signIn: "/login",
@@ -75,6 +79,7 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
   },
+  secret: process.env.NEXTAUTH_SECRET,
 }
 
 export const auth = () => getServerSession(authOptions)
