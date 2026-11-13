@@ -6,14 +6,32 @@
 /**
  * Escapes a value for CSV format
  * Handles semicolons, quotes, newlines, and null/undefined values
+ * Also protects against CSV formula injection by neutralizing dangerous prefixes
+ * Applies CSV escaping as the final step for all text values
  */
 export function escapeCsv(value: string | number | null | undefined): string {
   if (value === null || value === undefined) {
     return ''
   }
 
-  const stringValue = String(value)
+  // If value is a number, return it as-is (no CSV formula injection risk for numbers)
+  if (typeof value === 'number') {
+    return String(value)
+  }
 
+  let stringValue = String(value)
+
+  // Check for dangerous formula injection prefixes after trimming leading whitespace/control chars
+  const trimmedValue = stringValue.trimStart()
+  const dangerousPrefixes = ['=', '+', '-', '@', '\t', '\r', '\n']
+  const hasDangerousPrefix = dangerousPrefixes.some(prefix => trimmedValue.startsWith(prefix))
+
+  // If the value has a dangerous prefix, neutralize it with an apostrophe prefix
+  if (hasDangerousPrefix) {
+    stringValue = `'${stringValue}`
+  }
+
+  // Apply CSV escaping as the final step for all text values
   // If the value contains semicolon, quote, or newline, wrap in quotes and escape quotes
   if (stringValue.includes(';') || stringValue.includes('"') || stringValue.includes('\n') || stringValue.includes('\r')) {
     return `"${stringValue.replace(/"/g, '""')}"`

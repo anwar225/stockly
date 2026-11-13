@@ -13,8 +13,12 @@ export async function middleware(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
   const isAuthenticated = !!token
 
-  // Protect API routes
+  // Protect API routes (except public API routes)
+  // Only POST /api/register is public
   if (pathname.startsWith("/api") && !isAuthenticated) {
+    if (pathname === "/api/register" && req.method === "POST") {
+      return NextResponse.next()
+    }
     return NextResponse.json(
       { error: "Non authentifié" },
       { status: 401 }
@@ -36,7 +40,7 @@ export async function middleware(req: NextRequest) {
   }
 
   // Redirect to login if not authenticated and not on public pages
-  const publicPages = ["/", "/login"]
+  const publicPages = ["/", "/login", "/register"]
   if (!isAuthenticated && !publicPages.includes(pathname)) {
     return NextResponse.redirect(new URL("/login", req.url))
   }

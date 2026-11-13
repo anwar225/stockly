@@ -179,7 +179,7 @@ export async function POST(request: Request) {
       })
       
       if (!supplier) {
-        throw new Error('Fournisseur introuvable')
+        throw new Error('Fournisseur introuvable ou n\'appartenant pas à ce magasin')
       }
       
       // Verify all products exist and belong to this store
@@ -192,6 +192,32 @@ export async function POST(request: Request) {
       
       if (products.length !== productIds.length) {
         throw new Error('Un ou plusieurs produits introuvables ou n\'appartenant pas à ce magasin')
+      }
+      
+      // Additional verification: ensure categories and brands of products belong to this store
+      for (const product of products) {
+        if (product.categoryId) {
+          const category = await tx.category.findUnique({
+            where: {
+              id: product.categoryId,
+              storeId: store.id,
+            },
+          })
+          if (!category) {
+            throw new Error('Une catégorie d\'un produit n\'appartient pas à ce magasin')
+          }
+        }
+        if (product.brandId) {
+          const brand = await tx.brand.findUnique({
+            where: {
+              id: product.brandId,
+              storeId: store.id,
+            },
+          })
+          if (!brand) {
+            throw new Error('Une marque d\'un produit n\'appartient pas à ce magasin')
+          }
+        }
       }
       
       // Generate unique reference with retry mechanism
