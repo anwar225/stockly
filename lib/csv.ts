@@ -31,7 +31,7 @@ export function escapeCsv(value: string | number | null | undefined): string {
     stringValue = `'${stringValue}`
   }
 
-  // Apply CSV escaping as the final step for all text values
+  // Apply CSV escaping as the final step for ALL text values
   // If the value contains semicolon, quote, or newline, wrap in quotes and escape quotes
   if (stringValue.includes(';') || stringValue.includes('"') || stringValue.includes('\n') || stringValue.includes('\r')) {
     return `"${stringValue.replace(/"/g, '""')}"`

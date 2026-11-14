@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, useEffect } from 'react'
+import { useSession } from 'next-auth/react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -48,7 +49,15 @@ const productSchema = z.object({
 
 type View = 'dashboard' | 'products' | 'categories' | 'brands' | 'stock' | 'movements' | 'suppliers' | 'purchases' | 'customers' | 'sales' | 'invoices' | 'payments' | 'analytics' | 'settings' | 'soon'
 
+interface UserInfo {
+  name: string | null
+  email: string | null
+  storeName: string | null
+  roleLabel: string | null
+}
+
 export default function StocklyApp() {
+  const { data: session, status } = useSession()
   const [view, setView] = useState<View>('dashboard')
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -79,6 +88,12 @@ export default function StocklyApp() {
   const [receiveConfirm, setReceiveConfirm] = useState(false)
   const [purchasesLoading, setPurchasesLoading] = useState(false)
   const [purchasesError, setPurchasesError] = useState<string | null>(null)
+  const [userInfo, setUserInfo] = useState<UserInfo>({
+    name: null,
+    email: null,
+    storeName: null,
+    roleLabel: null,
+  })
 
   const form = useForm<ProductForm>({
     resolver: zodResolver(productSchema),
@@ -276,6 +291,36 @@ export default function StocklyApp() {
     
     fetchPurchases()
   }, [])
+
+  // Fetch user info from API
+  useEffect(() => {
+    async function fetchUserInfo() {
+      if (status === 'loading' || !session) {
+        return
+      }
+
+      try {
+        const response = await fetch('/api/user')
+        
+        if (!response.ok) {
+          console.error('Failed to fetch user info:', response.status)
+          return
+        }
+        
+        const data = await response.json()
+        setUserInfo({
+          name: data.user?.name || null,
+          email: data.user?.email || null,
+          storeName: data.store?.name || null,
+          roleLabel: data.role?.label || null,
+        })
+      } catch (err) {
+        console.error('Error fetching user info:', err)
+      }
+    }
+    
+    fetchUserInfo()
+  }, [session, status])
 
   const filteredProducts = useMemo(
     () =>
@@ -611,6 +656,8 @@ export default function StocklyApp() {
         view={view}
         onNavigate={go}
         onCloseMobile={() => setMobileOpen(false)}
+        userName={userInfo.name}
+        roleLabel={userInfo.roleLabel}
       />
       <div className={`min-h-screen transition-[padding] duration-200 ${collapsed ? 'lg:pl-[76px]' : 'lg:pl-[248px]'}`}>
         <Header
@@ -619,9 +666,11 @@ export default function StocklyApp() {
           onSearchChange={setSearch}
           onToggleCollapse={() => setCollapsed(!collapsed)}
           onOpenMobile={() => setMobileOpen(true)}
+          userName={userInfo.name}
+          storeName={userInfo.storeName}
         />
         <main className="mx-auto max-w-[1500px] px-4 py-7 sm:px-7 lg:px-9">
-          {view === 'dashboard' && <DashboardView products={productList} go={go} />}
+          {view === 'dashboard' && <DashboardView products={productList} go={go} userName={userInfo.name} />}
           {view === 'products' && (
             <ProductsView
               products={filteredProducts}
