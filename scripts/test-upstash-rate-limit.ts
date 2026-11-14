@@ -70,7 +70,8 @@ function validateUrl(url: string): void {
 
 async function sendRegistrationRequest(
   url: string,
-  attempt: number
+  attempt: number,
+  bypassSecret: string
 ): Promise<TestResult> {
   const registerUrl = `${url}/api/register`
   
@@ -85,13 +86,15 @@ async function sendRegistrationRequest(
   }
   
   try {
-    // Use native Node.js 24 fetch
+    // Use native Node.js 24 fetch with Vercel Automation Bypass
     const response = await fetch(registerUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-vercel-protection-bypass': bypassSecret,
       },
       body: JSON.stringify(invalidBody),
+      redirect: 'manual',
     })
     
     const statusCode = response.status
@@ -132,7 +135,7 @@ async function sendRegistrationRequest(
   }
 }
 
-async function runTest(url: string): Promise<void> {
+async function runTest(url: string, bypassSecret: string): Promise<void> {
   console.log('=== UPSTASH RATE LIMITING TEST ===\n')
   console.log(`Target URL: ${url}`)
   console.log(`Endpoint: ${url}/api/register`)
@@ -148,7 +151,7 @@ async function runTest(url: string): Promise<void> {
   console.log('Sending 6 consecutive requests...\n')
   
   for (let i = 1; i <= 6; i++) {
-    const result = await sendRegistrationRequest(url, i)
+    const result = await sendRegistrationRequest(url, i, bypassSecret)
     results.push(result)
     
     const statusIcon = result.passed ? '✅' : '❌'
@@ -201,7 +204,6 @@ async function runTest(url: string): Promise<void> {
     console.log('   1. UPSTASH_REDIS_REST_URL is set in Vercel environment variables')
     console.log('   2. UPSTASH_REDIS_REST_TOKEN is set in Vercel environment variables')
     console.log('   3. The Upstash Redis database is accessible from Vercel')
-    console.log('   4. NODE_ENV is set to "production" in Vercel Preview')
     process.exit(1)
   }
   
@@ -209,17 +211,14 @@ async function runTest(url: string): Promise<void> {
     console.log('⚠️  TEST INCONCLUSIVE: HTTP 429 received before the 6th request')
     console.log('   This indicates the rate limit counter may already have entries from previous tests')
     console.log('   The counter resets after 1 hour')
-    console.log('   To test with a fresh counter, wait 1 hour or manually clear the Redis key')
+    console.log('   Wait for the natural expiration of the rate limiting window to retest')
     process.exit(1)
   }
   
   if (all400) {
     console.log('❌ TEST FAILED: All requests returned HTTP 400')
     console.log('   No rate limiting was observed at the expected threshold')
-    console.log('   This could mean:')
-    console.log('   1. The rate limiting is not configured (using in-memory fallback)')
-    console.log('   2. NODE_ENV is not set to "production"')
-    console.log('   3. Upstash Redis is not properly configured')
+    console.log('   Check the configuration and server logs to diagnose the issue')
     process.exit(1)
   }
   
@@ -252,6 +251,21 @@ async function main(): Promise<void> {
   
   const url = args[0]
   
+  // Check for Vercel Automation Bypass secret
+  const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+  if (!bypassSecret) {
+    console.error('Error: VERCEL_AUTOMATION_BYPASS_SECRET environment variable is not set')
+    console.error('This secret is required to bypass Vercel Deployment Protection on Preview deployments')
+    console.error('Set it in your environment before running the test')
+    process.exit(1)
+  }
+  
+  if (bypassSecret.trim() === '') {
+    console.error('Error: VERCEL_AUTOMATION_BYPASS_SECRET is empty')
+    console.error('The secret must be set to a non-empty value')
+    process.exit(1)
+  }
+  
   try {
     validateUrl(url)
   } catch (error) {
@@ -260,7 +274,7 @@ async function main(): Promise<void> {
   }
   
   try {
-    await runTest(url)
+    await runTest(url, bypassSecret)
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     process.exit(1)

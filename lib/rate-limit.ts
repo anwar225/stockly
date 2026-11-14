@@ -91,7 +91,7 @@ export async function checkRateLimit(
         success,
         limit: upstashLimit,
         remaining,
-        reset: reset ? reset.getTime() : Date.now() + window,
+        reset: reset ?? Date.now() + window,
       }
     } catch (error) {
       console.error('Redis rate limiting error:', error)
