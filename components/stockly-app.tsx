@@ -15,6 +15,7 @@ import { DeleteConfirmDialog } from '@/components/products/delete-confirm-dialog
 import { CategoriesView } from '@/components/catalog/categories-view'
 import { CategoryDialog } from '@/components/catalog/category-dialog'
 import { BrandsView } from '@/components/catalog/brands-view'
+import { BrandDialog } from '@/components/catalog/brand-dialog'
 import { StockView } from '@/components/stock/stock-view'
 import { MovementsView } from '@/components/movements/movements-view'
 import { SettingsView } from '@/components/settings/settings-view'
@@ -70,6 +71,8 @@ export default function StocklyApp() {
   const [deleteProduct, setDeleteProduct] = useState<Product | null>(null)
   const [categoryModal, setCategoryModal] = useState(false)
   const [isSubmittingCategory, setIsSubmittingCategory] = useState(false)
+  const [brandModal, setBrandModal] = useState(false)
+  const [isSubmittingBrand, setIsSubmittingBrand] = useState(false)
   const [notice, setNotice] = useState('')
   const [productList, setProductList] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
@@ -196,39 +199,39 @@ export default function StocklyApp() {
   }, [productList])
 
   // Fetch brands from API
-  useEffect(() => {
-    async function fetchBrands() {
-      try {
-        setBrandsLoading(true)
-        setBrandsError(null)
-        const response = await fetch('/api/brands')
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch brands')
-        }
-        
-        const apiBrands: ApiBrand[] = await response.json()
-        
-        // Convert ApiBrand to Brand format
-        // Count products per brand from productList
-        const convertedBrands: Brand[] = apiBrands.map((apiBrand) => {
-          const productCount = productList.filter(p => p.brand === apiBrand.name).length
-          return {
-            id: apiBrand.id,
-            name: apiBrand.name,
-            count: productCount,
-          }
-        })
-        
-        setBrandList(convertedBrands)
-      } catch (err) {
-        console.error('Error fetching brands:', err)
-        setBrandsError('Impossible de charger les marques')
-      } finally {
-        setBrandsLoading(false)
+  const fetchBrands = async () => {
+    try {
+      setBrandsLoading(true)
+      setBrandsError(null)
+      const response = await fetch('/api/brands')
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch brands')
       }
+
+      const apiBrands: ApiBrand[] = await response.json()
+
+      // Convert ApiBrand to Brand format
+      // Count products per brand from productList
+      const convertedBrands: Brand[] = apiBrands.map((apiBrand) => {
+        const productCount = productList.filter(p => p.brand === apiBrand.name).length
+        return {
+          id: apiBrand.id,
+          name: apiBrand.name,
+          count: productCount,
+        }
+      })
+
+      setBrandList(convertedBrands)
+    } catch (err) {
+      console.error('Error fetching brands:', err)
+      setBrandsError('Impossible de charger les marques')
+    } finally {
+      setBrandsLoading(false)
     }
-    
+  }
+
+  useEffect(() => {
     fetchBrands()
   }, [productList])
 
@@ -760,10 +763,11 @@ export default function StocklyApp() {
             />
           )}
           {view === 'brands' && (
-            <BrandsView 
-              brands={brandList} 
-              loading={brandsLoading} 
-              error={brandsError} 
+            <BrandsView
+              brands={brandList}
+              loading={brandsLoading}
+              error={brandsError}
+              onAdd={() => setBrandModal(true)}
             />
           )}
           {view === 'suppliers' && (
@@ -861,6 +865,37 @@ export default function StocklyApp() {
             }
           }}
           isLoading={isSubmittingCategory}
+        />
+      )}
+      {brandModal && (
+        <BrandDialog
+          onClose={() => setBrandModal(false)}
+          onSubmit={async (data) => {
+            setIsSubmittingBrand(true)
+            try {
+              const response = await fetch('/api/brands', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+              })
+
+              if (!response.ok) {
+                const error = await response.json()
+                alert(error.error || 'Erreur lors de la création')
+                return
+              }
+
+              setBrandModal(false)
+              // Refresh brands
+              fetchBrands()
+            } catch (err) {
+              console.error('Error creating brand:', err)
+              alert('Erreur lors de la création')
+            } finally {
+              setIsSubmittingBrand(false)
+            }
+          }}
+          isLoading={isSubmittingBrand}
         />
       )}
       {supplierModal && (

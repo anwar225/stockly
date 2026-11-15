@@ -7,9 +7,10 @@ interface BrandsViewProps {
   brands: Brand[]
   loading?: boolean
   error?: string | null
+  onAdd?: () => void
 }
 
-export function BrandsView({ brands, loading, error }: BrandsViewProps) {
+export function BrandsView({ brands, loading, error, onAdd }: BrandsViewProps) {
   const rows = brands.map((b) => [b.name, `${b.count} produit${b.count > 1 ? 's' : ''}`, 'Actif'])
 
   return (
@@ -18,7 +19,10 @@ export function BrandsView({ brands, loading, error }: BrandsViewProps) {
         title="Marques"
         subtitle="Gérez les marques disponibles dans votre magasin."
         action={
-          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-white shadow-sm shadow-emerald-200 hover:bg-emerald-600">
+          <button
+            onClick={onAdd}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-white shadow-sm shadow-emerald-200 hover:bg-emerald-600"
+          >
             <Plus size={17} />
             Ajouter une marque
           </button>
