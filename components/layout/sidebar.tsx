@@ -9,6 +9,17 @@ interface SidebarProps {
   view: View
   onNavigate: (view: View) => void
   onCloseMobile: () => void
+  userName?: string | null | undefined
+  roleLabel?: string | null | undefined
+}
+
+function getInitials(name: string | null | undefined): string {
+  if (!name) return '??'
+  const parts = name.trim().split(' ')
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase()
+  }
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
 const navGroups = [
@@ -45,7 +56,7 @@ const navGroups = [
   },
 ] as const
 
-export function Sidebar({ collapsed, mobileOpen, view, onNavigate, onCloseMobile }: SidebarProps) {
+export function Sidebar({ collapsed, mobileOpen, view, onNavigate, onCloseMobile, userName, roleLabel }: SidebarProps) {
   return (
     <>
       <aside
@@ -100,12 +111,12 @@ export function Sidebar({ collapsed, mobileOpen, view, onNavigate, onCloseMobile
             className={`flex items-center gap-3 rounded-lg p-2 text-left hover:bg-slate-50 ${collapsed ? '' : 'w-full'}`}
           >
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">
-              AE
+              {getInitials(userName)}
             </div>
             {!collapsed && (
               <div>
-                <p className="text-xs font-semibold text-slate-800">Anwar El Amrani</p>
-                <p className="text-[11px] text-slate-400">Super administrateur</p>
+                <p className="text-xs font-semibold text-slate-800">{userName || 'Utilisateur'}</p>
+                <p className="text-[11px] text-slate-400">{roleLabel || 'Rôle'}</p>
               </div>
             )}
           </button>

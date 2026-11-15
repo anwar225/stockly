@@ -106,23 +106,29 @@ export async function POST(request: Request) {
 
     // Créer le produit dans une transaction avec validation
     const product = await prisma.$transaction(async (tx) => {
-      // Valider categoryId si fourni
+      // Valider categoryId si fourni et vérifier qu'il appartient au magasin courant
       if (categoryId) {
         const category = await tx.category.findUnique({
-          where: { id: categoryId },
+          where: { 
+            id: categoryId,
+            storeId: store.id,
+          },
         })
         if (!category) {
-          throw new Error('Catégorie invalide')
+          throw new Error('Catégorie introuvable ou n\'appartenant pas à ce magasin')
         }
       }
       
-      // Valider brandId si fourni
+      // Valider brandId si fourni et vérifier qu'il appartient au magasin courant
       if (brandId) {
         const brand = await tx.brand.findUnique({
-          where: { id: brandId },
+          where: { 
+            id: brandId,
+            storeId: store.id,
+          },
         })
         if (!brand) {
-          throw new Error('Marque invalide')
+          throw new Error('Marque introuvable ou n\'appartenant pas à ce magasin')
         }
       }
       

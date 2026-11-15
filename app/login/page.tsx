@@ -109,6 +109,19 @@ export default function LoginPage() {
             ← Retour à l'accueil
           </Link>
         </div>
+
+        {/* Lien vers l'inscription */}
+        <div className="text-center mt-4">
+          <p className="text-slate-600 mb-2">
+            Vous n'avez pas encore de compte ?
+          </p>
+          <Link
+            href="/register"
+            className="text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
+          >
+            Créer un compte
+          </Link>
+        </div>
       </div>
     </div>
   )

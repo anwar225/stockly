@@ -9,9 +9,16 @@ type View = 'dashboard' | 'products' | 'categories' | 'brands' | 'stock' | 'move
 interface DashboardViewProps {
   products: Product[]
   go: (view: View) => void
+  userName?: string | null | undefined
 }
 
-export function DashboardView({ products, go }: DashboardViewProps) {
+function getFirstName(name: string | null | undefined): string {
+  if (!name) return 'Utilisateur'
+  const parts = name.trim().split(' ')
+  return parts[0]
+}
+
+export function DashboardView({ products, go, userName }: DashboardViewProps) {
   // Calculate KPIs from real PostgreSQL data
   const totalProducts = products.length
   const totalStock = products.reduce((sum, p) => sum + p.stock, 0)
@@ -37,11 +44,19 @@ export function DashboardView({ products, go }: DashboardViewProps) {
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5)
 
+  // Get current date in French format
+  const currentDate = new Date().toLocaleDateString('fr-FR', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+
   return (
     <>
       <div className="mb-8">
-        <p className="mb-2 text-sm font-semibold text-emerald-600">Jeudi 5 septembre 2026</p>
-        <h1 className="font-display text-3xl font-bold tracking-tight text-slate-950">Bonjour, Anwar</h1>
+        <p className="mb-2 text-sm font-semibold text-emerald-600">{currentDate}</p>
+        <h1 className="font-display text-3xl font-bold tracking-tight text-slate-950">Bonjour, {getFirstName(userName)}</h1>
         <p className="mt-1 text-sm text-slate-500">Voici un aperçu de votre magasin.</p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

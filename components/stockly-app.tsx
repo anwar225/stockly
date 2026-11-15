@@ -1,6 +1,8 @@
 'use client'
 
 import { useMemo, useState, useEffect } from 'react'
+import { useSession } from 'next-auth/react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -11,6 +13,7 @@ import { ProductsView } from '@/components/products/products-view'
 import { ProductDialog } from '@/components/products/product-dialog'
 import { DeleteConfirmDialog } from '@/components/products/delete-confirm-dialog'
 import { CategoriesView } from '@/components/catalog/categories-view'
+import { CategoryDialog } from '@/components/catalog/category-dialog'
 import { BrandsView } from '@/components/catalog/brands-view'
 import { StockView } from '@/components/stock/stock-view'
 import { MovementsView } from '@/components/movements/movements-view'
@@ -48,13 +51,25 @@ const productSchema = z.object({
 
 type View = 'dashboard' | 'products' | 'categories' | 'brands' | 'stock' | 'movements' | 'suppliers' | 'purchases' | 'customers' | 'sales' | 'invoices' | 'payments' | 'analytics' | 'settings' | 'soon'
 
+interface UserInfo {
+  name: string | null
+  email: string | null
+  storeName: string | null
+  roleLabel: string | null
+}
+
 export default function StocklyApp() {
+  const { data: session, status } = useSession()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [view, setView] = useState<View>('dashboard')
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [productModal, setProductModal] = useState(false)
   const [deleteProduct, setDeleteProduct] = useState<Product | null>(null)
+  const [categoryModal, setCategoryModal] = useState(false)
+  const [isSubmittingCategory, setIsSubmittingCategory] = useState(false)
   const [notice, setNotice] = useState('')
   const [productList, setProductList] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
@@ -79,6 +94,12 @@ export default function StocklyApp() {
   const [receiveConfirm, setReceiveConfirm] = useState(false)
   const [purchasesLoading, setPurchasesLoading] = useState(false)
   const [purchasesError, setPurchasesError] = useState<string | null>(null)
+  const [userInfo, setUserInfo] = useState<UserInfo>({
+    name: null,
+    email: null,
+    storeName: null,
+    roleLabel: null,
+  })
 
   const form = useForm<ProductForm>({
     resolver: zodResolver(productSchema),
@@ -137,40 +158,40 @@ export default function StocklyApp() {
   }, [])
 
   // Fetch categories from API
-  useEffect(() => {
-    async function fetchCategories() {
-      try {
-        setCategoriesLoading(true)
-        setCategoriesError(null)
-        const response = await fetch('/api/categories')
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch categories')
-        }
-        
-        const apiCategories: ApiCategory[] = await response.json()
-        
-        // Convert ApiCategory to Category format
-        // Count products per category from productList
-        const convertedCategories: Category[] = apiCategories.map((apiCategory) => {
-          const productCount = productList.filter(p => p.category === apiCategory.name).length
-          return {
-            id: apiCategory.id,
-            name: apiCategory.name,
-            count: productCount,
-            createdAt: new Date(apiCategory.createdAt).toLocaleDateString('fr-FR'),
-          }
-        })
-        
-        setCategoryList(convertedCategories)
-      } catch (err) {
-        console.error('Error fetching categories:', err)
-        setCategoriesError('Impossible de charger les catégories')
-      } finally {
-        setCategoriesLoading(false)
+  const fetchCategories = async () => {
+    try {
+      setCategoriesLoading(true)
+      setCategoriesError(null)
+      const response = await fetch('/api/categories')
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch categories')
       }
+
+      const apiCategories: ApiCategory[] = await response.json()
+
+      // Convert ApiCategory to Category format
+      // Count products per category from productList
+      const convertedCategories: Category[] = apiCategories.map((apiCategory) => {
+        const productCount = productList.filter(p => p.category === apiCategory.name).length
+        return {
+          id: apiCategory.id,
+          name: apiCategory.name,
+          count: productCount,
+          createdAt: new Date(apiCategory.createdAt).toLocaleDateString('fr-FR'),
+        }
+      })
+
+      setCategoryList(convertedCategories)
+    } catch (err) {
+      console.error('Error fetching categories:', err)
+      setCategoriesError('Impossible de charger les catégories')
+    } finally {
+      setCategoriesLoading(false)
     }
-    
+  }
+
+  useEffect(() => {
     fetchCategories()
   }, [productList])
 
@@ -277,6 +298,36 @@ export default function StocklyApp() {
     fetchPurchases()
   }, [])
 
+  // Fetch user info from API
+  useEffect(() => {
+    async function fetchUserInfo() {
+      if (status === 'loading' || !session) {
+        return
+      }
+
+      try {
+        const response = await fetch('/api/user')
+        
+        if (!response.ok) {
+          console.error('Failed to fetch user info:', response.status)
+          return
+        }
+        
+        const data = await response.json()
+        setUserInfo({
+          name: data.user?.name || null,
+          email: data.user?.email || null,
+          storeName: data.store?.name || null,
+          roleLabel: data.role?.label || null,
+        })
+      } catch (err) {
+        console.error('Error fetching user info:', err)
+      }
+    }
+    
+    fetchUserInfo()
+  }, [session, status])
+
   const filteredProducts = useMemo(
     () =>
       productList.filter(
@@ -309,7 +360,24 @@ export default function StocklyApp() {
     setView(next)
     setMobileOpen(false)
     setSearch('')
+
+    // Update URL without full page refresh
+    const url = next === 'dashboard' ? '/dashboard' : `/dashboard?view=${next}`
+    router.push(url, { scroll: false })
   }
+
+  // Sync view with URL on mount and URL changes
+  useEffect(() => {
+    const viewParam = searchParams.get('view')
+    const validViews: View[] = ['dashboard', 'products', 'categories', 'brands', 'stock', 'movements', 'suppliers', 'purchases', 'customers', 'sales', 'invoices', 'payments', 'analytics', 'settings', 'soon']
+
+    if (viewParam && validViews.includes(viewParam as View)) {
+      setView(viewParam as View)
+    } else if (viewParam) {
+      // Invalid view parameter, redirect to dashboard
+      router.replace('/dashboard')
+    }
+  }, [searchParams])
 
   const submitProduct = async (data: ProductForm) => {
     try {
@@ -611,6 +679,8 @@ export default function StocklyApp() {
         view={view}
         onNavigate={go}
         onCloseMobile={() => setMobileOpen(false)}
+        userName={userInfo.name}
+        roleLabel={userInfo.roleLabel}
       />
       <div className={`min-h-screen transition-[padding] duration-200 ${collapsed ? 'lg:pl-[76px]' : 'lg:pl-[248px]'}`}>
         <Header
@@ -619,9 +689,11 @@ export default function StocklyApp() {
           onSearchChange={setSearch}
           onToggleCollapse={() => setCollapsed(!collapsed)}
           onOpenMobile={() => setMobileOpen(true)}
+          userName={userInfo.name}
+          storeName={userInfo.storeName}
         />
         <main className="mx-auto max-w-[1500px] px-4 py-7 sm:px-7 lg:px-9">
-          {view === 'dashboard' && <DashboardView products={productList} go={go} />}
+          {view === 'dashboard' && <DashboardView products={productList} go={go} userName={userInfo.name} />}
           {view === 'products' && (
             <ProductsView
               products={filteredProducts}
@@ -684,6 +756,7 @@ export default function StocklyApp() {
               categories={categoryList} 
               loading={categoriesLoading} 
               error={categoriesError} 
+              onAdd={() => setCategoryModal(true)}
             />
           )}
           {view === 'brands' && (
@@ -757,6 +830,37 @@ export default function StocklyApp() {
             setNotice('Produit supprimé')
             setTimeout(() => setNotice(''), 3000)
           }}
+        />
+      )}
+      {categoryModal && (
+        <CategoryDialog
+          onClose={() => setCategoryModal(false)}
+          onSubmit={async (data) => {
+            setIsSubmittingCategory(true)
+            try {
+              const response = await fetch('/api/categories', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+              })
+
+              if (!response.ok) {
+                const error = await response.json()
+                alert(error.error || 'Erreur lors de la création')
+                return
+              }
+
+              setCategoryModal(false)
+              // Refresh categories
+              fetchCategories()
+            } catch (err) {
+              console.error('Error creating category:', err)
+              alert('Erreur lors de la création')
+            } finally {
+              setIsSubmittingCategory(false)
+            }
+          }}
+          isLoading={isSubmittingCategory}
         />
       )}
       {supplierModal && (

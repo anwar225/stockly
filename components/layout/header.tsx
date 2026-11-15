@@ -7,9 +7,20 @@ interface HeaderProps {
   onSearchChange: (value: string) => void
   onToggleCollapse: () => void
   onOpenMobile: () => void
+  userName?: string | null | undefined
+  storeName?: string | null | undefined
 }
 
-export function Header({ collapsed, search, onSearchChange, onToggleCollapse, onOpenMobile }: HeaderProps) {
+function getInitials(name: string | null | undefined): string {
+  if (!name) return '??'
+  const parts = name.trim().split(' ')
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase()
+  }
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+export function Header({ collapsed, search, onSearchChange, onToggleCollapse, onOpenMobile, userName, storeName }: HeaderProps) {
   return (
     <header className="sticky top-0 z-20 flex h-[74px] items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-4 backdrop-blur sm:px-7">
       <div className="flex items-center gap-3">
@@ -63,11 +74,11 @@ export function Header({ collapsed, search, onSearchChange, onToggleCollapse, on
             <LogOut size={19} />
           </button>
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">
-            AE
+            {getInitials(userName)}
           </div>
           <div className="hidden leading-tight sm:block">
-            <p className="text-xs font-semibold">Anwar El Amrani</p>
-            <p className="text-[11px] text-slate-400">Atlas Électroménager</p>
+            <p className="text-xs font-semibold">{userName || 'Utilisateur'}</p>
+            <p className="text-[11px] text-slate-400">{storeName || 'Magasin'}</p>
           </div>
           <ChevronDown size={15} className="hidden text-slate-400 sm:block" />
         </div>

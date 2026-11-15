@@ -7,9 +7,10 @@ interface CategoriesViewProps {
   categories: Category[]
   loading?: boolean
   error?: string | null
+  onAdd?: () => void
 }
 
-export function CategoriesView({ categories, loading, error }: CategoriesViewProps) {
+export function CategoriesView({ categories, loading, error, onAdd }: CategoriesViewProps) {
   const rows = categories.map((c) => [
     c.name,
     `${c.count} produit${c.count > 1 ? 's' : ''}`,
@@ -23,7 +24,10 @@ export function CategoriesView({ categories, loading, error }: CategoriesViewPro
         title="Catégories"
         subtitle="Organisez votre catalogue par familles de produits."
         action={
-          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-white shadow-sm shadow-emerald-200 hover:bg-emerald-600">
+          <button
+            onClick={onAdd}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-white shadow-sm shadow-emerald-200 hover:bg-emerald-600"
+          >
             <Plus size={17} />
             Ajouter une catégorie
           </button>
